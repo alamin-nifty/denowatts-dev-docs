@@ -1,0 +1,50 @@
+[
+  {
+    "name": "Sign In",
+    "route": "/signin",
+    "module": "Auth",
+    "purpose": "Email/password login form. Issues access and refresh tokens on success, applies user theme preference, and handles cross-origin redirects to the reports app.",
+    "actions": ["Log in with email and password", "Navigate to sign-up", "Navigate to forgot password"],
+    "flow": "flows/authentication.md"
+  },
+  {
+    "name": "Sign Up",
+    "route": "/signup",
+    "module": "Auth",
+    "purpose": "New-user registration form. Collects name, email, phone, and password; validates reCAPTCHA; creates a PENDING account and sends an email-verification link.",
+    "actions": ["Create account", "Trigger reCAPTCHA challenge"],
+    "flow": "flows/authentication.md"
+  },
+  {
+    "name": "Verification Pending",
+    "route": "/signup/verification",
+    "module": "Auth",
+    "purpose": "Holding page shown after signup while the user's email is unverified. Lets the user resend the verification email (rate-limited) or update their email address before verifying.",
+    "actions": ["Resend verification email", "Change email address before verifying"],
+    "flow": "flows/authentication.md"
+  },
+  {
+    "name": "Email Verification",
+    "route": "/signup/verify",
+    "module": "Auth",
+    "purpose": "Consumes the CONFIRM_EMAIL JWT from the email link, activates the account (PENDING → ACTIVE), and auto-assigns the user to a matching company if the email domain matches.",
+    "actions": ["Auto-verify on page load via URL token"],
+    "flow": "flows/authentication.md"
+  },
+  {
+    "name": "Forgot Password",
+    "route": "/reset-password",
+    "module": "Auth",
+    "purpose": "Accepts an email address and sends a password-reset link. Always returns success to prevent email enumeration.",
+    "actions": ["Request password reset email"],
+    "flow": "flows/authentication.md"
+  },
+  {
+    "name": "Reset Password",
+    "route": "/reset-password/verify",
+    "module": "Auth",
+    "purpose": "Consumes the RESET_PASSWORD JWT from the email link and sets a new password. Requires password confirmation.",
+    "actions": ["Set new password via email token"],
+    "flow": "flows/authentication.md"
+  }
+]

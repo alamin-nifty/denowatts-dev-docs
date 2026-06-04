@@ -1,0 +1,58 @@
+[
+  {
+    "key": "Auth",
+    "title": "Authentication",
+    "icon": "lock",
+    "flow": "flows/authentication.md",
+    "summary": "Sign-in, sign-up, email verification, password reset and OTP. The gate in front of the whole portal."
+  },
+  {
+    "key": "Portfolio",
+    "title": "Portfolio",
+    "icon": "grid",
+    "flow": null,
+    "summary": "Cross-site rollups: energy KPIs, triage and irradiation across every site a company owns."
+  },
+  {
+    "key": "Site",
+    "title": "Site",
+    "icon": "panel",
+    "flow": null,
+    "summary": "Per-site workspace: live view, channels, energy model, hardware services and field setup."
+  },
+  {
+    "key": "Status",
+    "title": "Status",
+    "icon": "pulse",
+    "flow": null,
+    "summary": "Health and connectivity views at site, portfolio and channel level."
+  },
+  {
+    "key": "Analytics",
+    "title": "Analytics",
+    "icon": "chart",
+    "flow": null,
+    "summary": "Energy accounting and performance analytics for a single site or the whole portfolio."
+  },
+  {
+    "key": "Tests",
+    "title": "Tests",
+    "icon": "beaker",
+    "flow": null,
+    "summary": "Capacity tests, benchmark alignment and other commissioning checks."
+  },
+  {
+    "key": "FieldSetup",
+    "title": "Field Setup",
+    "icon": "wrench",
+    "flow": null,
+    "summary": "Gateway provisioning, networking info and installation verification in the field."
+  },
+  {
+    "key": "Settings",
+    "title": "Settings",
+    "icon": "gear",
+    "flow": null,
+    "summary": "Company, user, and hardware administration — including cell-modem plan management."
+  }
+]

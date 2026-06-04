@@ -1,0 +1,9 @@
+{
+  "/orders/approvals":   ["the approvals screen", "where orders go red", "sign-off queue", "pending orders"],
+  "/orders/:id":         ["the order page", "that detail view", "where I see one order"],
+  "/customers":          ["the customer list", "client directory", "who our customers are"],
+  "/customers/:id":      ["the 360 view", "customer card", "that profile thing"],
+  "/billing/invoices":   ["the invoice list", "billing page", "where the unpaid ones are", "money screen"],
+  "/reports/revenue":    ["the dashboard", "the charts", "main reporting screen", "the graphs"],
+  "/admin/users":        ["the settings page", "permissions", "where we add staff", "admin screen"]
+}
