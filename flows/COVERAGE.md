@@ -7,13 +7,13 @@ so re-verifying never means re-reading the whole repo.
 | Feature | Main route(s) | Doc | Coverage tracker | Status |
 |---|---|---|---|---|
 | Authentication | `/signin`, `/signup`, `/reset-password` | [authentication.md](./authentication.md) | [tracker](./authentication.coverage.md) | 🟢 100% · v3 |
-| Portfolio | `/portfolio` | — | — | ⬜ not started |
-| Site | `/site/:siteId` | — | — | ⬜ not started |
-| Status | `/status` | — | — | ⬜ not started |
-| Analytics | `/analytics/:siteId` | — | — | ⬜ not started |
-| Tests | `/tests` | — | — | ⬜ not started |
-| Field Setup | `/field-setup` | — | — | ⬜ not started |
-| Settings | `/settings` | — | — | ⬜ not started |
+| Portfolio | `/portfolio` | [portfolio.md](./portfolio.md) | [tracker](./portfolio.coverage.md) | 🟢 100% · v1 |
+| Site | `/site/:siteId` | [site.md](./site.md) | — | 🟢 100% · v1 |
+| Status | `/status` | [status.md](./status.md) | — | 🟢 100% · v1 |
+| Settings | `/settings` | [settings.md](./settings.md) | [tracker](./settings.coverage.md) | 🟢 100% · v1 |
+| Analytics | `/analytics/:siteId` | [analytics.md](./analytics.md) | [tracker](./analytics.coverage.md) | 🟢 100% · v1 |
+| Field Setup | `/field-setup` | [field-setup.md](./field-setup.md) | [tracker](./field-setup.coverage.md) | 🟢 100% · v1 |
+| Tests | `/tests` | [tests.md](./tests.md) | [tracker](./tests.coverage.md) | 🟢 100% · v1 |
 
 Legend: 🟢 complete · 🟡 partial · ⬜ not started
 

@@ -46,5 +46,453 @@
     "purpose": "Consumes the RESET_PASSWORD JWT from the email link and sets a new password. Requires password confirmation.",
     "actions": ["Set new password via email token"],
     "flow": "flows/authentication.md"
+  },
+  {
+    "name": "Portfolio Map",
+    "route": "/portfolio",
+    "module": "Portfolio",
+    "purpose": "Displays all company sites on an interactive Google Map with color-coded markers, alongside status summary tables and alarm summaries. Entry point to the fleet overview.",
+    "actions": ["View all sites on map", "Filter map by status or alarm", "Navigate to site detail"],
+    "flow": "flows/portfolio.md"
+  },
+  {
+    "name": "Portfolio Status",
+    "route": "/status/portfolio",
+    "module": "Portfolio",
+    "purpose": "Detailed table view of all sites with service status, connection status, event counts, and setup progress. Supports search, filtering, and site-note editing. Auto-refreshes every minute.",
+    "actions": ["View fleet details table", "Search sites by name", "Filter by status", "Add or edit site notes"],
+    "flow": "flows/portfolio.md"
+  },
+  {
+    "name": "Energy KPIs",
+    "route": "/portfolio/energy-kpis",
+    "module": "Portfolio",
+    "purpose": "Analytics sub-page showing fleet-wide energy performance charts and key performance indicators.",
+    "actions": ["View energy charts"],
+    "flow": "flows/portfolio.md"
+  },
+  {
+    "name": "Triage",
+    "route": "/portfolio/triage",
+    "module": "Portfolio",
+    "purpose": "Analytics sub-page showing fault monitoring, alert severity, and triage-focused diagnostics for the fleet.",
+    "actions": ["View triage charts"],
+    "flow": "flows/portfolio.md"
+  },
+  {
+    "name": "Irradiation",
+    "route": "/portfolio/irradiation",
+    "module": "Portfolio",
+    "purpose": "Analytics sub-page showing irradiance and solar resource analytics for the fleet.",
+    "actions": ["View irradiation charts"],
+    "flow": "flows/portfolio.md"
+  },
+  {
+    "name": "Site Overview",
+    "route": "/site/:siteId",
+    "module": "Site",
+    "purpose": "KPI dashboard showing real-time energy metrics, status badges, site location map, and site plan for one installation.",
+    "actions": ["View KPI table", "View site map", "View site plan", "Navigate to sub-pages"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Site Live View",
+    "route": "/site/:siteId/live-view",
+    "module": "Site",
+    "purpose": "Real-time channel data and live readings from the site's connected devices.",
+    "actions": ["View live data stream"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Site Setup Tracker",
+    "route": "/site/:siteId/site-setup-tracker",
+    "module": "Site",
+    "purpose": "Commissioning checklist showing setup step progress, completion status, and responsibility assignments.",
+    "actions": ["Track setup steps", "Mark steps complete", "Add notes"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "General Info",
+    "route": "/site/:siteId/general-info",
+    "module": "Site",
+    "purpose": "Editable site metadata including name, location, capacity, contacts, subscription details, and energy model configuration.",
+    "actions": ["Edit site info", "Change managers", "Update tags", "Modify blocks"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Hardware / Services",
+    "route": "/site/:siteId/hardware-services",
+    "module": "Site",
+    "purpose": "Hardware inventory, asset records, and service history for the site.",
+    "actions": ["View hardware", "View service records"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Energy Model",
+    "route": "/site/:siteId/energy-model",
+    "module": "Site",
+    "purpose": "Predicted and learned energy model data, monthly power forecasts, and capacity test analysis.",
+    "actions": ["View predicted model", "View learned model", "View capacity test"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Virtual Site Builder",
+    "route": "/site/:siteId/site-builder",
+    "module": "Site",
+    "purpose": "Drag-and-drop visual builder for mapping device topology, connections, and site flow (Admin/SuperAdmin only).",
+    "actions": ["Design site flow", "Map device topology", "Deploy changes"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Channels",
+    "route": "/site/:siteId/channels",
+    "module": "Site",
+    "purpose": "Configuration and status of all data channels including DENO, gateway, modem, Modbus, and OPC servers.",
+    "actions": ["Configure channels", "View channel status", "Edit channel settings"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Denobox",
+    "route": "/site/:siteId/denobox",
+    "module": "Site",
+    "purpose": "File browser for accessing files stored on the site's Denobox device, including configurations and logs.",
+    "actions": ["Browse files", "Download files"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Capacity Test",
+    "route": "/site/:siteId/capacity-test",
+    "module": "Site",
+    "purpose": "Multi-step wizard to configure, run, and download capacity test results for the site.",
+    "actions": ["Configure test", "Run test", "Download results"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Channel Map",
+    "route": "/site/:siteId/channel-map",
+    "module": "Site",
+    "purpose": "Visual layout map showing physical channel positions and relationships on the site.",
+    "actions": ["View channel layout"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Learned Shade Profile",
+    "route": "/site/:siteId/learned-shade-profile",
+    "module": "Site",
+    "purpose": "Shade profile learned from historical irradiance data, showing seasonal shading patterns.",
+    "actions": ["View shade profile"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Benchmark Alignment",
+    "route": "/site/:siteId/benchmark-alignment",
+    "module": "Site",
+    "purpose": "Tool to align energy model benchmarks against measured data and optimize performance predictions.",
+    "actions": ["Align benchmarks"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Energy Accounting",
+    "route": "/site/:siteId/energy-accounting",
+    "module": "Site",
+    "purpose": "Detailed energy accounting and disaggregation analytics dashboard for the site.",
+    "actions": ["View energy accounting", "View disaggregation"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Notifications",
+    "route": "/site/:siteId/notifications",
+    "module": "Site",
+    "purpose": "Notification settings for alarms, delivery channels, and notification delay preferences.",
+    "actions": ["Configure alarms", "Set notification channels", "Set delays"],
+    "flow": "flows/site.md"
+  },
+  {
+    "name": "Site Status",
+    "route": "/status/site/:siteId",
+    "module": "Status",
+    "purpose": "Real-time status of all channels for one site, showing connection state, last update time, and current metrics.",
+    "actions": ["View channel status", "View channel metrics", "Add channel notes"],
+    "flow": "flows/status.md"
+  },
+  {
+    "name": "Portfolio Status",
+    "route": "/status/portfolio",
+    "module": "Status",
+    "purpose": "Fleet-wide status table showing all sites with connection, service status, alarms, tasks, and setup progress.",
+    "actions": ["View fleet status", "Filter sites", "Add site notes"],
+    "flow": "flows/status.md"
+  },
+  {
+    "name": "Channel Status",
+    "route": "/status/channel",
+    "module": "Status",
+    "purpose": "Detailed status view for a selected channel, showing connection state, metrics, and gateway remote management status.",
+    "actions": ["View channel metrics", "View gateway settings"],
+    "flow": "flows/status.md"
+  },
+  {
+    "name": "Company",
+    "route": "/settings/company",
+    "module": "Settings",
+    "purpose": "Company profile page where users can view and edit their company information (name, email, contact details) and see all users assigned to the company with their roles and status.",
+    "actions": ["View company profile", "Edit company information", "View company users", "Search users by name"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Services",
+    "route": "/settings/service-management",
+    "module": "Settings",
+    "purpose": "Service management page for configuring service contracts, SLAs, and support terms associated with the company.",
+    "actions": ["View service contracts", "Configure service terms"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Quotation Management",
+    "route": "/settings/quote-management",
+    "module": "Settings",
+    "purpose": "Quotation management hub for creating and managing quotes for new sites. Includes bulk creation, editing, and renewal workflows.",
+    "actions": ["Create quote", "Bulk create quotes", "Edit quote", "View quote history", "Renew site"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Notification Management",
+    "route": "/settings/notification-management",
+    "module": "Settings",
+    "purpose": "Centralized notification and alert rule configuration. Set thresholds, delivery channels, and escalation policies for site alarms.",
+    "actions": ["Configure alert rules", "Set thresholds", "Configure delivery channels"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Global Alarm Configuration",
+    "route": "/settings/global-alarm-configuration",
+    "module": "Settings",
+    "purpose": "System-wide alarm settings and thresholds that apply across all sites in the company.",
+    "actions": ["Configure alarm thresholds", "Enable/disable alarms", "Set alarm severity levels"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Metrics",
+    "route": "/metrics",
+    "module": "Settings",
+    "purpose": "Global metric definitions and custom metric library accessible to all authenticated users, regardless of company assignment.",
+    "actions": ["View metric definitions", "Search metrics"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Device Types",
+    "route": "/device-types",
+    "module": "Settings",
+    "purpose": "Device type library showing specifications for PV modules, inverters, and other solar equipment. Accessible to all authenticated users.",
+    "actions": ["View device type library", "Search devices"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Company Management",
+    "route": "/settings/company-management",
+    "module": "Settings",
+    "purpose": "SuperAdmin page for managing multiple companies in the system. View, create, and edit all company profiles.",
+    "actions": ["View all companies", "Create company", "Edit company", "Search companies"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Users Management",
+    "route": "/settings/users-management",
+    "module": "Settings",
+    "purpose": "SuperAdmin page for managing users across all companies. Edit roles, deactivate users, resend invitations, and manage permissions.",
+    "actions": ["View all users", "Edit user role", "Deactivate user", "Resend invitation", "Search users"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Template Management",
+    "route": "/settings/template-management",
+    "module": "Settings",
+    "purpose": "SuperAdmin page for managing Modbus register templates used for device driver configuration and data parsing.",
+    "actions": ["View templates", "Create template", "Edit template", "Delete template"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Module Management",
+    "route": "/settings/module-management",
+    "module": "Settings",
+    "purpose": "SuperAdmin page for managing PV module specifications including power rating, efficiency, temperature coefficient, and manufacturer details.",
+    "actions": ["View modules", "Create module", "Edit module specs", "Delete module"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Inverter Management",
+    "route": "/settings/inverter-management",
+    "module": "Settings",
+    "purpose": "SuperAdmin page for managing inverter device specifications including power rating, input voltage, topology, and operating parameters.",
+    "actions": ["View inverters", "Create inverter", "Edit inverter specs", "Delete inverter"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Asset Management",
+    "route": "/settings/asset-management",
+    "module": "Settings",
+    "purpose": "SuperAdmin page for managing the physical asset inventory including modems, gateways, Denos, and other hardware with serial numbers and status.",
+    "actions": ["View assets", "Create asset", "Edit asset", "Track asset status", "Search assets"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Remote Management",
+    "route": "/settings/remote-management",
+    "module": "Settings",
+    "purpose": "SuperAdmin page for configuring remote access tunneling and device management capabilities for gateway and field equipment.",
+    "actions": ["Configure remote access", "Manage tunnels", "Set permissions"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Metrics Management",
+    "route": "/settings/metrics-management",
+    "module": "Settings",
+    "purpose": "SuperAdmin page for defining custom metrics and metric aggregations used throughout the platform for analytics and reporting.",
+    "actions": ["View custom metrics", "Create metric", "Edit metric", "Delete metric"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "System Notification",
+    "route": "/settings/system-notification",
+    "module": "Settings",
+    "purpose": "SuperAdmin page for configuring system-wide email and SMS notification settings, templates, and delivery channels.",
+    "actions": ["Configure email settings", "Configure SMS settings", "Edit notification templates"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Cell Modem Plan Management",
+    "route": "/settings/cell-modem-management",
+    "module": "Settings",
+    "purpose": "SuperAdmin page for managing cellular SIM cards and data plans via Lattigo integration. Monitor data usage, suspend/restore SIMs, and view usage analytics by site.",
+    "actions": ["View SIM status", "Monitor data usage", "Suspend/restore SIM", "View usage analytics"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Site Launch",
+    "route": "/settings/site-launch",
+    "module": "Settings",
+    "purpose": "SuperAdmin page for managing site go-live configuration and commissioning checklist status across the fleet.",
+    "actions": ["View launch status", "Update site launch status"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Activity Logs",
+    "route": "/settings/activity-logs",
+    "module": "Settings",
+    "purpose": "SuperAdmin audit trail showing all user actions in the system with timestamp, user, action type, affected entity, and change details.",
+    "actions": ["View activity logs", "Filter by user", "Filter by action type", "Search logs", "Export logs"],
+    "flow": "flows/settings.md"
+  },
+  {
+    "name": "Analytics Dashboard",
+    "route": "/analytics/:siteId?",
+    "module": "Analytics",
+    "purpose": "Interactive time-series charting system for visualizing solar site data at channel, site, and portfolio levels. Select from 15+ chart types, customize date ranges, filter by channels and metrics, and export charts as PNG/PDF.",
+    "actions": ["Select chart type", "Select site(s)", "Adjust date range", "Select metrics and channels", "View interactive chart", "Export chart", "Auto-refresh"],
+    "flow": "flows/analytics.md"
+  },
+  {
+    "name": "Embedded Analytics",
+    "route": "/analytics/embedded",
+    "module": "Analytics",
+    "purpose": "Stripped-down analytics variant for embedding in third-party tools or custom dashboards.",
+    "actions": ["Configure embedded chart", "Export data"],
+    "flow": "flows/analytics.md"
+  },
+  {
+    "name": "Energy Accounting",
+    "route": "/site/:siteId/energy-accounting",
+    "module": "Analytics",
+    "purpose": "Site-level analytics tab using the same charting system, pre-configured to show energy-related charts for that site.",
+    "actions": ["View energy charts", "Adjust date range", "Select metrics"],
+    "flow": "flows/analytics.md"
+  },
+  {
+    "name": "Field Setup Intro",
+    "route": "/field-setup",
+    "module": "Field Setup",
+    "purpose": "Welcome page for the 3-step field installation wizard. Explains the setup process and guides technicians to begin gateway commissioning.",
+    "actions": ["Read setup instructions", "Start wizard"],
+    "flow": "flows/field-setup.md"
+  },
+  {
+    "name": "Gateway Setup",
+    "route": "/field-setup/gateway-setup",
+    "module": "Field Setup",
+    "purpose": "First step of the wizard: select or validate a gateway device by serial number, confirming it exists in the system.",
+    "actions": ["Select site", "Enter gateway serial number", "Validate gateway"],
+    "flow": "flows/field-setup.md"
+  },
+  {
+    "name": "List Setup",
+    "route": "/field-setup/gateway-setup/list-setup",
+    "module": "Field Setup",
+    "purpose": "Manage Deno devices already linked to the gateway. Add new Denos or remove existing ones.",
+    "actions": ["View linked Denos", "Add Deno", "Remove Deno"],
+    "flow": "flows/field-setup.md"
+  },
+  {
+    "name": "Networking Info",
+    "route": "/field-setup/gateway-setup/networking-info",
+    "module": "Field Setup",
+    "purpose": "Configure gateway network settings including IP address, DNS, and gateway parameters.",
+    "actions": ["Configure IP settings", "Set DNS", "Configure network parameters"],
+    "flow": "flows/field-setup.md"
+  },
+  {
+    "name": "Deno List",
+    "route": "/field-setup/gateway-setup/deno-list",
+    "module": "Field Setup",
+    "purpose": "Inventory of all Deno devices with status, signal strength, and discovery controls. Verify Denos are connected.",
+    "actions": ["View Deno inventory", "Trigger discovery scan", "Check signal strength"],
+    "flow": "flows/field-setup.md"
+  },
+  {
+    "name": "Gateway Live Data",
+    "route": "/field-setup/gateway-setup/gateway-live-data",
+    "module": "Field Setup",
+    "purpose": "Real-time data verification from the gateway. Confirms the gateway is connected and sending data.",
+    "actions": ["View live metrics", "Verify gateway connection"],
+    "flow": "flows/field-setup.md"
+  },
+  {
+    "name": "Setup",
+    "route": "/field-setup/gateway-setup/setup",
+    "module": "Field Setup",
+    "purpose": "Channel configuration and Deno-to-port mapping. Associate discovered Denos with physical channels and configure measurements.",
+    "actions": ["Configure channels", "Map Denos to ports", "Set measurement types"],
+    "flow": "flows/field-setup.md"
+  },
+  {
+    "name": "Verify Installation",
+    "route": "/field-setup/gateway-setup/verify-installation",
+    "module": "Field Setup",
+    "purpose": "Final verification checklist and site creation. Confirm all settings and create the site record in the system.",
+    "actions": ["Review final checklist", "Create site", "Verify installation"],
+    "flow": "flows/field-setup.md"
+  },
+  {
+    "name": "Tests",
+    "route": "/tests",
+    "module": "Tests",
+    "purpose": "Performance and diagnostic reporting interface with two modes: View Archive for pre-generated reports or Create New for live test charts. Includes interactive Plotly dashboard with zoom controls, date navigation, and site/timezone-aware filtering.",
+    "actions": ["View archived test reports", "Create new live test", "Select site and report type", "Configure date range", "Navigate date ranges with prev/next", "Zoom snapshot charts"],
+    "flow": "flows/tests.md"
+  },
+  {
+    "name": "Tests — View Archive",
+    "route": "/tests?viewMode=viewArchive",
+    "module": "Tests",
+    "purpose": "View pre-generated archived reports: Capacity Test, Energy Test, or Production and Loss. Each report is a static snapshot that can be zoomed and panned.",
+    "actions": ["Select report type", "Select site", "View snapshot with zoom controls"],
+    "flow": "flows/tests.md"
+  },
+  {
+    "name": "Tests — Create New",
+    "route": "/tests?viewMode=create",
+    "module": "Tests",
+    "purpose": "Generate live test charts on demand. Select site, chart type (Capacity, Energy, or Production/Loss), and date range. Date navigation buttons skip to previous/next period of the same duration.",
+    "actions": ["Select chart type", "Select site", "Pick date range or use presets", "Navigate date ranges"],
+    "flow": "flows/tests.md"
   }
 ]

@@ -10,49 +10,49 @@
     "key": "Portfolio",
     "title": "Portfolio",
     "icon": "grid",
-    "flow": null,
+    "flow": "flows/portfolio.md",
     "summary": "Cross-site rollups: energy KPIs, triage and irradiation across every site a company owns."
   },
   {
     "key": "Site",
     "title": "Site",
     "icon": "panel",
-    "flow": null,
+    "flow": "flows/site.md",
     "summary": "Per-site workspace: live view, channels, energy model, hardware services and field setup."
   },
   {
     "key": "Status",
     "title": "Status",
     "icon": "pulse",
-    "flow": null,
+    "flow": "flows/status.md",
     "summary": "Health and connectivity views at site, portfolio and channel level."
   },
   {
     "key": "Analytics",
     "title": "Analytics",
     "icon": "chart",
-    "flow": null,
+    "flow": "flows/analytics.md",
     "summary": "Energy accounting and performance analytics for a single site or the whole portfolio."
   },
   {
     "key": "Tests",
     "title": "Tests",
     "icon": "beaker",
-    "flow": null,
+    "flow": "flows/tests.md",
     "summary": "Capacity tests, benchmark alignment and other commissioning checks."
   },
   {
     "key": "FieldSetup",
     "title": "Field Setup",
     "icon": "wrench",
-    "flow": null,
+    "flow": "flows/field-setup.md",
     "summary": "Gateway provisioning, networking info and installation verification in the field."
   },
   {
     "key": "Settings",
     "title": "Settings",
     "icon": "gear",
-    "flow": null,
+    "flow": "flows/settings.md",
     "summary": "Company, user, and hardware administration — including cell-modem plan management."
   }
 ]

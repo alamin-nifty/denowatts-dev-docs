@@ -67,6 +67,7 @@ export default function DocsPortal() {
   const [mode, setMode] = useState(() => {
     try { return localStorage.getItem('docMode') || 'blend' } catch { return 'blend' }
   })
+  const [menuOpen, setMenuOpen] = useState(false)
   const onMode = useCallback((m) => {
     setMode(m)
     try { localStorage.setItem('docMode', m) } catch { /* ignore */ }
@@ -77,6 +78,7 @@ export default function DocsPortal() {
   const go = useCallback((key) => {
     setActive(key)
     setActivePage(null)
+    setMenuOpen(false)
     history.replaceState(null, '', key ? `#/${key}` : '#')
     if (contentRef.current) contentRef.current.scrollTop = 0
   }, [])
@@ -96,7 +98,7 @@ export default function DocsPortal() {
       if (e.key === '/' && document.activeElement !== inputRef.current) {
         e.preventDefault(); inputRef.current?.focus()
       }
-      if (e.key === 'Escape') { setQuery(''); inputRef.current?.blur() }
+      if (e.key === 'Escape') { setQuery(''); inputRef.current?.blur(); setMenuOpen(false) }
     }
     document.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('hashchange', onHash); document.removeEventListener('keydown', onKey) }
@@ -122,8 +124,16 @@ export default function DocsPortal() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
-        <Logo />
+      <div className={`sidebar-overlay${menuOpen ? ' open' : ''}`} onClick={() => setMenuOpen(false)} />
+      <aside className={`sidebar${menuOpen ? ' open' : ''}`}>
+        <div className="sidebar-header">
+          <Logo />
+          <button className="sidebar-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
         <div className="searchwrap">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
@@ -165,6 +175,14 @@ export default function DocsPortal() {
       </aside>
 
       <main className="main" ref={contentRef}>
+        <div className="mobile-header">
+          <button className="menu-toggle" onClick={() => setMenuOpen(true)} aria-label="Open menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 12h18M3 6h18M3 18h18" />
+            </svg>
+          </button>
+          <Logo />
+        </div>
         {searchHits
           ? <SearchResults hits={searchHits} term={term} onPick={go} />
           : activeSection
