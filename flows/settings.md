@@ -2,206 +2,200 @@
 title: Settings
 owner: alamin-nifty
 status: draft
-version: 1
-updated_at: 2026-06-05
+version: 3
+updated_at: 2026-06-10
 ---
 
 # Settings
 
-Settings is a centralized hub for all admin and user configuration. It spans 18 different pages grouped into three tiers: **company-level** (accessible to all users), **account management** (for admins), and **system configuration** (SuperAdmin-only). The feature is organized as a dropdown menu in the header with role-based filtering — non-SuperAdmins see only company-relevant pages, while SuperAdmins see all administrative tools.
+Settings is the platform's **central configuration hub** — a single gear-icon dropdown in the header that links out to roughly 18 individual configuration pages. The menu adapts to who you are: a regular user with a company sees a short list; a platform admin sees everything. Each page is really its own feature with its own data, so this doc is the **directory** — it explains the settings shell and points every page at its dedicated deep doc.
 
-In plain terms: the gear icon in the header opens a dropdown menu. Click a settings page to configure your company profile, manage users, API keys, notification rules, assets, devices, or system-wide settings. Different roles see different menu items.
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* is the directory of settings pages and who can see them. *Developer* adds the menu-component internals, route registration, the exact guards, the pages that have no dedicated doc (documented inline), file references, and a terminology primer.
+
+---
+
+## Why this matters
+
+Settings is where the platform gets configured — companies, users, alarm thresholds, hardware catalogs, notification rules, API keys. Because these controls are powerful, the menu is deliberately tiered: most people only ever see the handful of pages relevant to their company, while the sensitive, platform-wide controls are reserved for SUPER_ADMINs and locked down at the URL level too — so you can't reach an admin page just by guessing its address.
+
+---
+
+## What's in Settings
+
+The pages fall into three tiers. Each links to its own deep doc where one exists.
+
+### Tier 1 — for any user with a company
+
+- **Company** — your organization's profile and settings → [[companies]]
+- **Services** — site subscriptions and service-contract management *(documented in the Developer view of this doc)*
+- **Quotation Management** — sales quotes (also openable without a company) → [[quote]]
+- **Notification Management** — how and when your company is alerted → [[notification]]
+- **Global Alarm Configuration** — the alarm types and their thresholds → [[alarm-config]]
+
+### Tier 2 — shared reference data
+
+- **Metrics** — the catalog of measured quantities the platform tracks → [[metrics]]
+- **Device Types** — the catalog of supported hardware types → [[device-types]]
+
+### Tier 3 — platform administration (SUPER_ADMIN only)
+
+- **Company Management** — create and manage all companies → [[companies]]
+- **Users Management** — create and manage all users → [[users]]
+- **Template Management** — the shared Modbus register-map template library → [[channels]] *(page detail in Developer view)*
+- **Module Management** — the PV-module spec catalog *(Developer view)*
+- **Inverter Management** — the inverter spec catalog *(Developer view)*
+- **Asset Management** — hardware asset inventory → [[assets]]
+- **Remote Management** — remote device configuration → [[assets]]
+- **Metrics Management** — edit the metric catalog → [[metrics]]
+- **Cell Modem Plan Management** — cellular SIM/modem usage analytics *(Developer view)*
+- **System Notification** — platform-wide broadcast notifications → [[notification]]
+- **Site Launch** — fleet-wide go-live / commissioning tracker *(Developer view)*
+- **Activity Logs** — the audit trail → [[activity-logs]]
+
+---
+
+## Who sees what
+
+The menu has effectively two audiences:
+
+- **SUPER_ADMINs** see every page — Tier 1, Tier 2, and the full Tier 3 admin set.
+- **Everyone else** sees only Tier 1 and Tier 2. (An *Admin* and a regular *User* see the same menu here — the only distinction the menu makes is "SUPER_ADMIN or not".)
+- **Users with no company yet** see just three pages: Quotation Management, Metrics, and Device Types — enough to get started before they're fully set up.
+
+Tier 3 pages aren't just hidden from the menu for non-admins — they're blocked at the URL too, so typing the address directly still bounces a non-admin away.
 
 ---
 
 ## The rules that matter
 
-**Settings menu is role-gated at the UI level, then enforced on the backend.** The header's `settingsMenuItems` array is split into two groups: base items (visible to all users with a company) and SuperAdmin-only items (after a divider). Frontend filtering shows/hides items; backend `@Roles()` decorators enforce access. — `denowatts-portal/src/common/components/Header.tsx:398-693`, `denowatts-backend/src/**/resolvers/*.ts`
-
-**Role constants define who can do what:** `UserType.User` (read-only), `UserType.Admin` (standard admin), `UserType.SuperAdmin` (full access). The backend uses `@Roles(SUPER_ADMIN)`, `@AllRoles()`, etc. to gate mutations and queries. — `denowatts-portal/src/common/components/Header.tsx:518-528`, `denowatts-portal/src/graphql/__generated__/graphql.ts`
-
-**Settings routes require a company assignment (except Metrics and Device Types).** Most settings pages are wrapped in `<CompanyRequiredRoute />`, which redirects users without a company to `/not-found`. Metrics and Device Types are company-agnostic and accessible to all authenticated users. — `denowatts-portal/src/router.tsx:350-351`, `denowatts-portal/src/views/ProtectedRoute/CompanyRequiredRoute.tsx`
-
-**SuperAdmin-only pages are wrapped in `<ProtectedRoute />`.** This route guard checks if the current user is a SuperAdmin. Non-SuperAdmins attempting direct URLs are redirected to `/not-found`. Examples: API Management, Users Management, Activity Logs, Cell Modem Management. — `denowatts-portal/src/router.tsx:416-547`, `denowatts-portal/src/views/ProtectedRoute/ProtectedRoute.tsx`
-
-**Settings menu selection is sticky and context-aware.** The `settingsSelectedKeys` memoized function maps the current pathname to a menu key (e.g., `/settings/company` → key `'1'`). This ensures the correct item is highlighted when navigating. — `denowatts-portal/src/common/components/Header.tsx:398-422`
+- **The menu is gated on SUPER_ADMIN vs not** — there's no separate Admin menu tier.
+- **No-company users get only Quotation, Metrics, and Device Types.**
+- **The settings area requires a company**, with two deliberate exceptions: SUPER_ADMINs, and the Quotation Management page (open without one).
+- **Admin pages are locked at the route, not just the menu** — direct-URL access by a non-admin is redirected away.
+- **Guards check the server, not the browser** — a stale or tampered local role can't unlock pages; the real user is re-fetched on every guarded navigation.
 
 ---
 
-## Where it lives
+## Settings menu structure (with role gating) {dev}
 
-The settings feature spans 18 routes, organized into three tiers:
+The menu is one memoized array, `settingsMenuItems`, built in `denowatts-portal/src/common/components/Header.tsx:424-693`. It is `baseItems` (keys 1, 2, 3, 4, 5, 6, 12) plus — **only for SuperAdmins** — a divider and the admin items (keys 7–11, 13–19). The active-item highlight comes from `settingsSelectedKeys` (`Header.tsx:398-422`). Role values from the `UserType` enum (`Header.tsx:77`).
 
-### Tier 1: All users (with company)
-- **Company** — `/settings/company` — View/edit company profile, see users
-- **Services** — `/settings/service-management` — Service contracts and SLAs
-- **Quotation Management** — `/settings/quote-management` — Quote templates and renewals
-- **Notification Management** — `/settings/notification-management` — Alert rules and thresholds
-- **Global Alarm Configuration** — `/settings/global-alarm-configuration` — System-wide alarm settings
+Menu role logic (`Header.tsx:518-528`): **SuperAdmin** → full list; **non-SuperAdmin with a company** → `baseItems` only; **non-SuperAdmin without a company** → only keys 3, 4, 5 (Quotation, Metrics, Device Types) (`:519-525`). `UserType.Admin` and `UserType.User` are treated identically — the only branch is `type === SuperAdmin`.
 
-### Tier 2: Metrics and Device Types (company-agnostic)
-- **Metrics** — `/metrics` — Custom metric definitions
-- **Device Types** — `/device-types` — Device type library
+### Tier 1 — base items (any user with a company) {dev}
 
-### Tier 3: SuperAdmin only (after divider in menu)
-- **Company Management** — `/settings/company-management` — Manage multiple companies
-- **Users Management** — `/settings/users-management` — User permissions and roles
-- **Template Management** — `/settings/template-management` — Modbus register templates
-- **Module Management** — `/settings/module-management` — PV module specifications
-- **Inverter Management** — `/settings/inverter-management` — Inverter device specs
-- **Asset Management** — `/settings/asset-management` — Physical asset inventory (modems, gateways, etc.)
-- **Remote Management** — `/settings/remote-management` — Remote access and tunneling
-- **Metrics Management** — `/settings/metrics-management` — Custom metric configuration
-- **System Notification** — `/settings/system-notification` — Email/SMS system settings
-- **Cell Modem Plan Management** — `/settings/cell-modem-management` — Lattigo SIM and data plan management
-- **Site Launch** — `/settings/site-launch` — Site go-live configuration
-- **Activity Logs** — `/settings/activity-logs` — Audit trail of all user actions
+| Page | Key | Route | Visible to | Deep doc | Menu item |
+|------|---|---|---|---|---|
+| Company | 1 | `/settings/company` | any user (not no-company) | [[companies]] | `Header.tsx:426-438` |
+| Services | 2 | `/settings/service-management` | any with company | inline | `Header.tsx:439-451` |
+| Quotation Management | 3 | `/settings/quote-management` | any (incl. no-company) | [[quote]] | `Header.tsx:452-464` |
+| Notification Management | 6 | `/settings/notification-management` | any with company | [[notification]] | `Header.tsx:491-503` |
+| Global Alarm Configuration | 12 | `/settings/global-alarm-configuration` | any with company | [[alarm-config]] | `Header.tsx:504-516` |
 
----
+### Tier 2 — metric/device reference (base items, top-level routes) {dev}
 
-## Who can open what
+In the **base** menu array but registered at the **top level** of the router, *outside* `<App>` and any guard (see Route registration).
 
-### Frontend guards
+| Page | Key | Route | Visible to | Deep doc | Menu item |
+|------|---|---|---|---|---|
+| Metrics | 4 | `/metrics` | any (incl. no-company) | [[metrics]] | `Header.tsx:465-477` |
+| Device Types | 5 | `/device-types` | any (incl. no-company) | [[device-types]] | `Header.tsx:478-490` |
 
-- **`CompanyRequiredRoute`** wraps the entire `/settings` path tree (except metrics and device-types). You must have a company assigned; SuperAdmins bypass this check. Users without a company see an empty settings menu (only items 4 and 5). — `denowatts-portal/src/router.tsx:350-351`
-- **`ProtectedRoute`** wraps all SuperAdmin-only pages (API Management, Users Management, Template Management, Module Management, Inverter Management, Asset Management, Remote Management, Metrics Management, System Notification, Cell Modem Management, Site Launch, Activity Logs). Non-SuperAdmins attempting these routes are redirected to `/not-found`. — `denowatts-portal/src/router.tsx:416-547`
+### Tier 3 — admin settings (SuperAdmin only, after the divider) {dev}
 
-### Backend role control
+Divider at `Header.tsx:531-534`; keys 7+ render only when `currentUser?.type === UserType.SuperAdmin` (`:529-692`). Every Tier-3 route is additionally wrapped in `<ProtectedRoute>`.
 
-Each settings page's resolver/service is decorated with role guards:
+| Page | Key | Route | Deep doc | Menu item |
+|------|---|---|---|---|
+| Company Management | 7 | `/settings/company-management` | [[companies]] | `Header.tsx:535-547` |
+| Users Management | 8 | `/settings/users-management` | [[users]] | `Header.tsx:548-560` |
+| Template Management (Modbus) | 9 | `/settings/template-management` | inline | `Header.tsx:561-573` |
+| Module Management | 10 | `/settings/module-management` | inline | `Header.tsx:574-586` |
+| Inverter Management | 11 | `/settings/inverter-management` | inline | `Header.tsx:587-599` |
+| Asset Management | 13 | `/settings/asset-management` | [[assets]] | `Header.tsx:601-613` |
+| Remote Management | 14 | `/settings/remote-management` | [[assets]] | `Header.tsx:614-626` |
+| Metrics Management | 15 | `/settings/metrics-management` | [[metrics]] | `Header.tsx:627-639` |
+| Cell Modem Plan Management | 19 | `/settings/cell-modem-management` | inline | `Header.tsx:640-652` |
+| System Notification | 16 | `/settings/system-notification` | [[notification]] | `Header.tsx:653-665` |
+| Site Launch | 17 | `/settings/site-launch` | inline | `Header.tsx:666-678` |
+| Activity Logs | 18 | `/settings/activity-logs` | [[activity-logs]] | `Header.tsx:679-691` |
 
-| Page | Resolver guard | Details |
-|------|---|---|
-| Company | `@AllRoles()` or no guard | All users can read/update their own company |
-| Service Management | `@AllRoles()` | All users can view services |
-| Quotation Management | `@AllRoles()` | All users can create quotes (but may be filtered by company) |
-| Notification Management | `@AllRoles()` | All users can manage their company's alerts |
-| Global Alarm Configuration | `@AllRoles()` | All users can configure alarms for their company |
-| API Management | `@Roles(SUPER_ADMIN)` | SuperAdmin only |
-| Users Management | `@Roles(SUPER_ADMIN)` | SuperAdmin only |
-| Template Management | `@Roles(SUPER_ADMIN)` | SuperAdmin only |
-| Module Management | `@Roles(SUPER_ADMIN)` | SuperAdmin only |
-| Inverter Management | `@Roles(SUPER_ADMIN)` | SuperAdmin only |
-| Asset Management | `@Roles(SUPER_ADMIN)` | SuperAdmin only |
-| Remote Management | `@Roles(SUPER_ADMIN)` | SuperAdmin only |
-| Metrics Management | `@Roles(SUPER_ADMIN)` | SuperAdmin only |
-| System Notification | `@Roles(SUPER_ADMIN)` | SuperAdmin only |
-| Cell Modem Management | `@Roles(SUPER_ADMIN)` | SuperAdmin only |
-| Activity Logs | `@Roles(SUPER_ADMIN)` | SuperAdmin only |
-| Company Management | `@Roles(SUPER_ADMIN)` | SuperAdmin only |
+> Menu keys are identifiers, not display order: array order is 1,2,3,4,5,6,12 then 7,8,9,10,11,13,14,15,19,16,17,18.
 
 ---
 
-## How it works {dev}
+## Settings shell implementation {dev}
 
-### Opening the settings menu
+### Menu component {dev}
+`settingsMenuItems` memo — `Header.tsx:424-693`. Reads `currentUser` from Redux (`:200`); deps `[currentUser?.type, currentUser?.company]` (`:693`). Each item's `label` is a `<Link to="/settings/...">`. `settingsSelectedKeys` memo (`:398-422`) maps a route substring to a key; **ordering matters** — the broad `/settings/company` check (`:418`) is placed *after* `/settings/company-management` (`:399`) so the specific path wins. The `<Dropdown>` renders at `:1154-1167`. Mobile: the settings menu isn't duplicated in the drawer; only per-page header sub-components are mirrored in the `md:hidden` block (`:1190-1232`). UNCLEAR how SuperAdmins reach settings on mobile at runtime (the gear `<Dropdown>` is in the always-visible header row, so likely available).
 
-1. The user clicks the gear icon in the header. — `denowatts-portal/src/common/components/Header.tsx`
-2. The header component calculates `settingsMenuItems` using a memoized function. It filters items based on `currentUser?.type === UserType.SuperAdmin`. If the user is SuperAdmin, the array includes all items; if not, it returns only the base items (items 1–6, and item 12). — `denowatts-portal/src/common/components/Header.tsx:424-693`
-3. The menu is rendered as an Ant Design `<Dropdown>` with `settingsSelectedKeys` memoized to map the current pathname to the active menu key. This ensures the correct item is highlighted. — `denowatts-portal/src/common/components/Header.tsx:398-422`
-4. Clicking a menu item navigates to its route using `<Link to="/settings/...">`. — `denowatts-portal/src/common/components/Header.tsx:429-436`
+### Route registration {dev}
+All settings pages under `{ path: 'settings', element: <CompanyRequiredRoute />, children: [...] }` — `router.tsx:350-552`. **Metrics and Device Types are NOT under settings** — top-level routes at `:605-608` / `:609-615`, *after* the `<App>` children array closes (`:561`), so they render **outside** the shell and **outside** any guard (device-types' GraphQL is also `@Public()`). `api-management` (`:414-424`) is registered + `ProtectedRoute`-wrapped but has **no menu entry** and is linked nowhere — see Edge cases.
 
-### Opening a settings page (example: Company)
-
-1. The user navigates to `/settings/company`. The route is protected by `CompanyRequiredRoute`, which checks `currentUser?.company`. If not set, the user is redirected to `/not-found`. — `denowatts-portal/src/router.tsx:354-358`
-2. `CompanyPage` renders. It fires the `GET_COMPANY` query with `variables: { id: currentUser?.company }` and the `GET_USERS` query to list all users in the company. — `denowatts-portal/src/pages/dashboard/settings/company-management/CompanyPage.tsx:38-60`
-3. The backend's `company` resolver checks the user's role. Non-SuperAdmins are scoped to their own company; SuperAdmins can view any company. — `denowatts-backend/src/company/resolvers/company.resolver.ts`
-4. The page renders two sections: a form with editable company fields (name, email, etc.) and a table of users in the company with their roles, email, status, and last login. — `denowatts-portal/src/pages/dashboard/settings/company-management/CompanyPage.tsx:64-350`
-
-### Updating settings (example: Company update)
-
-1. The user edits a field in the Company form and clicks Save. The component fires the `UPDATE_COMPANY` mutation with the updated fields. — `denowatts-portal/src/pages/dashboard/settings/company-management/CompanyPage.tsx:64-83`
-2. The backend's `updateCompany` resolver is decorated `@AllRoles()` but is guarded in the service layer. Non-SuperAdmins can only update certain fields (e.g., managers, tags); SuperAdmins can update all fields. — `denowatts-backend/src/company/resolvers/company.resolver.ts`, `denowatts-backend/src/company/services/company.service.ts`
-3. After mutation, the component triggers `refetchQueries: [GET_COMPANY, ...]` to refresh the UI with the updated data. — `denowatts-portal/src/pages/dashboard/settings/company-management/CompanyPage.tsx:43-45`
-
-### SuperAdmin-only pages (example: Users Management)
-
-1. The user navigates to `/settings/users-management`. The route is protected by `ProtectedRoute`, which checks `currentUser?.type === UserType.SuperAdmin`. Non-SuperAdmins are redirected to `/not-found`. — `denowatts-portal/src/router.tsx:437-445`
-2. `UsersManagementPage` fires a `GET_USERS` query (often with a company filter or global scope for SuperAdmins). — `denowatts-portal/src/pages/dashboard/settings/users-management/UsersManagementPage.tsx`
-3. The page renders a table of users with columns: Name, Email, Role, Company, Status, Last Login. SuperAdmins can edit user roles, deactivate users, resend invites, and manage permissions. — `denowatts-portal/src/pages/dashboard/settings/users-management/UsersManagementPage.tsx`
-4. Mutations (e.g., `UPDATE_USER`, `DEACTIVATE_USER`) are guarded by `@Roles(SUPER_ADMIN)` on the backend. — `denowatts-backend/src/users/resolvers/users.resolver.ts`
+### Role-gating guards {dev}
+- **`CompanyRequiredRoute`** (`views/ProtectedRoute/CompanyRequiredRoute.tsx`) wraps the whole settings subtree (`router.tsx:351`). Re-fetches via `GET_USER`; SuperAdmin → `<Outlet />` (`:37-39`); `/settings/quote-management*` → `<Outlet />` without a company (`:34,42-44`); else no company → `/not-found` (`:47-49`).
+- **`ProtectedRoute`** wraps each Tier-3 page (`ProtectedRoute.tsx:21-34`): re-fetch user; no user → `/signin`; not SuperAdmin → `/not-found`. The hard gate against direct-URL access.
+- **`NonUserRoute`** (blocks read-only `User`) is **not used** in settings; recorded for completeness.
 
 ---
 
-## Data it touches {dev}
+## Sub-pages without a dedicated doc (documented inline) {dev}
 
-### Company settings
-- **`Company` collection** — name, email, contact info, subscription, billing address — `denowatts-backend/src/company/schemas/company.schema.ts`
-- **`User` collection** — roles, company assignment, status, permissions — `denowatts-backend/src/users/schemas/user.schema.ts`
+### Services — `/settings/service-management` {dev}
+`pages/dashboard/settings/service-management/ServiceManagementPage.tsx` (~847 lines). A site-subscription / service-contract table (lists sites incl. soft-deleted via `showDeleted: true`), each row expandable to its channels, editing site name/tags/managers and Deno-asset info. Ops: `GET_SITES` (with `packageExpiresAt`, `showDeleted: true`), `GET_USERS` (manager picker, skipped unless SuperAdmin+company), lazy `GET_CHANNELS`, `UPDATE_SITE`/`DELETE_SITE` (`:7-10, 53-126`).
 
-### Service & Quotation management
-- **`Service` / `ServiceContract` collection** — service types, pricing, terms, linked to sites — (future doc)
-- **`Quote` / `Quotation` collection** — quotation templates, history, linked to sites — (future doc: quotation-management.md)
+### Template Management — `/settings/template-management` {dev}
+`pages/dashboard/settings/modbus-template/ModbusTemplatePage.tsx` (~235 lines; route name ≠ dir name). Bulk editor for Modbus register-map templates reused across sites. Ops: `GET_MODBUS_TEMPLATES` (`network-only`), `BULK_UPDATE_MODBUS_TEMPLATES` (refetches templates + `GET_CHANNELS`) (`:7-41`). `useBlocker` warns on unsaved edits (`:58`). Channel side covered in [[channels]]; metric-prefix auto-naming in [[metrics]].
 
-### Notification & Alarm settings
-- **`AlarmRule` / `NotificationRule` collection** — alert thresholds, email/SMS recipients, linked to sites — (future doc: notification-management.md)
-- **`SystemSetting` collection** — global alarm thresholds, email templates — `denowatts-backend/src/settings/schemas/setting.schema.ts`
+### Module / Inverter Management — `/settings/module-management`, `/settings/inverter-management` {dev}
+Near-identical paginated CRUD catalogs of PV-module and inverter specs (`ModuleManagementPage.tsx` / `InverterManagementPage.tsx`, ~99 lines each). Filter by manufacturer/model via Redux `state.header.*ManagementSettings`. Ops: `PAGINATE_MODULES` / `PAGINATE_INVERTERS` with `{ page, limit, manufacturer, model }`, `cache-and-network`. Create/edit mutations live in the `*AddModal`/`*Table` components — UNCLEAR exact names (not re-read).
 
-### Admin/SuperAdmin pages
+### Cell Modem Plan Management — `/settings/cell-modem-management` {dev}
+`pages/dashboard/settings/cell-modem-management/CellModemManagementPage.tsx` (~357 lines). SuperAdmin usage-analytics dashboard for Lattigo cellular SIMs/modems; server-side paginated table; date-range filter changes which columns show. Ops: `GET_LATTIGO_USAGE_ANALYTICS` `{ page, pageSize, startDate, endDate }` (`:7,64-84`), SuperAdmin-only resolver. Per-modem card lives in [[channels]]/[[assets]].
 
-- **`User` collection** — detailed user records, roles, permissions, company assignments — `denowatts-backend/src/users/schemas/user.schema.ts`
-- **`Asset` collection** — inventory of modems, gateways, Denos, linked to sites via channels — `denowatts-backend/src/assets/schemas/asset.schema.ts`
-- **`ModbusTemplate` collection** — Modbus register definitions for device drivers — (future doc)
-- **`Module` collection** — PV module specs (power rating, efficiency, temperature coefficient, etc.) — (future doc)
-- **`Inverter` collection** — inverter device specs (power rating, input voltage, model, etc.) — (future doc)
-- **`ActivityLog` collection** — audit trail of all mutations (user, timestamp, action, entity, changes) — `denowatts-backend/src/activity-log/schemas/activity-log.schema.ts`
-- **`LattigoDevice` (via Lattigo API)** — cell modem state, data usage, plan details; indexed by `Asset.simIccid` — `denowatts-backend/src/lattigo/lattigo.service.ts`
+### Site Launch — `/settings/site-launch` {dev}
+`pages/dashboard/site-launch/SiteLaunchPage.tsx` (~600+ lines; sibling of `settings/`). Fleet-wide go-live tracker — a sites × setup-tasks matrix, each cell a status `<Select>` (Completed/Incomplete/N/A) editing a site's `setupStatus`; task names shared with the per-site Setup Tracker. Ops: `PAGINATE_SITES`, `UPDATE_SITE` (`:7-8`).
+
+### API Management — `/settings/api-management` (orphaned, not in menu) {dev}
+`pages/dashboard/settings/api-management/APIManagementPage.tsx` (~371 lines). Per-company API-key + IP-whitelist admin: Generate/Revoke a company's public API key, remove whitelisted IPs (`isValidIP`, `:22`). Ops: `GET_COMPANIES`, `UPDATE_API_KEY` (`Generate|Revoke`), `UPDATE_COMAPNY` (sic) to write `whitelistedIPs` (`:4-9,39-42,312-339`). Wrapped in `ProtectedRoute` but with **no menu entry and no link** — reachable only by typing the URL. Edits the same `Company.token`/`whitelistedIPs` covered by [[companies]] and used by [[data-out]]. Likely superseded — flag for review.
 
 ---
 
-## Cross-cutting patterns {dev}
+## Business rules (cited) {dev}
 
-### Menu structure and selection
-
-The settings menu is defined as a single memoized array in the Header component. The array is split into:
-1. **Base items** (always visible): Company (1), Services (2), Quotation Management (3), Metrics (4), Device Types (5), Notification Management (6), Global Alarm Config (12)
-2. **Divider** (separator)
-3. **SuperAdmin-only items** (7–11, 13–19): Company Management, Users Management, Template Management, Module Management, Inverter Management, Asset Management, Remote Management, Metrics Management, Cell Modem Management, System Notification, Site Launch, Activity Logs
-
-The `settingsSelectedKeys` function maps the current pathname to a key, ensuring the correct item is highlighted as the user navigates. — `denowatts-portal/src/common/components/Header.tsx:398-422`
-
-### Role-based access patterns
-
-Settings pages use a consistent pattern:
-1. **Frontend route guard** — `CompanyRequiredRoute` or `ProtectedRoute` wraps the route. — `denowatts-portal/src/router.tsx:350-547`
-2. **Backend resolver guard** — `@Roles(SUPER_ADMIN)` or `@AllRoles()` decorator. — `denowatts-backend/src/*/resolvers/*.ts`
-3. **Service-layer filtering** — Even if a resolver allows all roles, the service may filter results by company or user. — `denowatts-backend/src/*/services/*.service.ts`
-
-Example: Users Management is gated at all three levels:
-- **Frontend**: `<ProtectedRoute>` block prevents non-SuperAdmins from reaching the page.
-- **Backend resolver**: `@Roles(SUPER_ADMIN)` decorator rejects non-SuperAdmin requests.
-- **Service**: `getUsers()` would never reach this level for non-SuperAdmins due to the resolver guard. — `denowatts-portal/src/router.tsx:437-445`, `denowatts-backend/src/users/resolvers/users.resolver.ts`
-
-### Form and table patterns
-
-Settings pages typically follow this layout:
-- **Header with title and optional filter/search controls**
-- **Form section** (for editable settings) with Save button
-- **Table section** (for list views) with columns, pagination, and action buttons (Edit, Delete, Deactivate)
-- **Modals or drawers** for detail views and bulk actions
-
-Example: CompanyPage has a form at the top (company name, email, etc.) and a table below (users in the company, with role and status columns). — `denowatts-portal/src/pages/dashboard/settings/company-management/CompanyPage.tsx`
+- **Menu gated on `SuperAdmin` only; Admin == User** — `Header.tsx:518`.
+- **No-company non-SuperAdmin → keys 3, 4, 5 only** — `Header.tsx:519-525`.
+- **Settings subtree requires a company** except SuperAdmins and `/settings/quote-management*` — `CompanyRequiredRoute.tsx:34,37-49`.
+- **Tier-3 pages SuperAdmin-only at the route** via `ProtectedRoute` — `ProtectedRoute.tsx:27-32` (independent of the menu filter).
+- **Guards re-fetch the user (`GET_USER`)** rather than trusting Redux — `CompanyRequiredRoute.tsx:15-19,32-33`, `ProtectedRoute.tsx:15-27`.
+- **Selected-key highlight resolves most-specific path first** — `Header.tsx:398-422`.
 
 ---
 
 ## Edge cases & gotchas {dev}
 
-- **Settings menu is split by role but not by company.** A SuperAdmin sees all menu items regardless of which company is selected in the global filter. The individual pages are still company-scoped via `CompanyRequiredRoute`. — `denowatts-portal/src/common/components/Header.tsx:518-528`
-- **Non-SuperAdmin users without a company see a filtered menu.** If `currentUser?.company` is null and `currentUser?.type !== SuperAdmin`, the menu returns only items 3, 4, and 5 (Quotation, Metrics, Device Types). Navigating to other settings pages is blocked by `CompanyRequiredRoute`. — `denowatts-portal/src/common/components/Header.tsx:518-526`, `denowatts-portal/src/views/ProtectedRoute/CompanyRequiredRoute.tsx`
-- **Metrics and Device Types are global pages, not company-scoped.** Unlike other settings pages, `/metrics` and `/device-types` are accessible to all authenticated users and are not wrapped in `CompanyRequiredRoute`. — `denowatts-portal/src/router.tsx:465-490`
-- **Direct URL access bypasses the menu.** A user can navigate directly to `/settings/users-management` without opening the settings dropdown. Frontend `ProtectedRoute` will catch non-SuperAdmins, but the menu won't reflect the current page until the URL maps back to a menu key. — `denowatts-portal/src/common/components/Header.tsx:398-422`
-- **Settings pages do not auto-redirect after mutations.** If a user deletes a user or deactivates a company, the page remains open. You need to manually refresh or close/reopen the page to see the update. Some pages use `refetchQueries` to auto-update the table. — `denowatts-portal/src/pages/dashboard/settings/users-management/UsersManagementPage.tsx`
-- **Company scoping happens server-side in individual resolvers.** Each settings page resolver is responsible for checking if the user has permission to view/edit that company's data. SuperAdmins bypass all checks; non-SuperAdmins are scoped to their own company. — `denowatts-backend/src/company/services/company.service.ts`, `denowatts-backend/src/users/services/users.service.ts`
-- **The settings module in the backend is minimal.** The main `settings.module.ts` only exports a single `currentGatewayFirmware` query for firmware version info. The actual settings pages use domain-specific modules (users, company, assets, etc.), not the settings module. — `denowatts-backend/src/settings/settings.resolver.ts`
+- **API Management is an orphaned route** — registered + guarded but absent from the menu and unlinked (`router.tsx:414-424`). Likely superseded. Flag for review.
+- **Metrics & Device Types render outside the app shell** — after the `<App>` children array (`:561`), so no `CompanyRequiredRoute`/`ProtectedRoute`; device-types GraphQL is `@Public()`.
+- **Route ≠ component/dir names** — `template-management` → `modbus-template/`; menu label "Cell Modem **Plan** Management"; `site-launch` lives in `pages/dashboard/site-launch/`. Grep by route.
+- **`settingsSelectedKeys` only highlights known sub-paths** — an unmapped route (e.g. `/settings/api-management`) leaves no highlighted item (`Header.tsx:421`).
+- **Settings dropdown is the same on mobile and desktop**, but per-page header sub-components are split between `hidden md:flex` (`:845-924`) and `block md:hidden` (`:1190-1232`); not every page is mirrored to mobile. UNCLEAR if intentional.
+- **Menu keys are not display order** — admin items interleave (…15, 19, 16, 17, 18).
+- **Quote management has its own breadcrumb special-casing** (`Header.tsx:752-801`).
 
 ---
 
-## Related flows
+## Solar & platform terminology {dev}
 
-- [[authentication]] — role definitions and user type checks that gate settings access
-- [[company-management]] — (future doc) details on managing multiple companies
-- [[users-management]] — (future doc) user creation, role assignment, permissions
-- [[asset-management]] — (future doc) physical asset inventory
-- [[notification-management]] — (future doc) alert rules and thresholds
-- [[quotation-management]] — (future doc) quote templates and renewals
-- [[activity-logs]] — (future doc) audit trail and user action logging
+- **Metric** — a measured quantity the platform tracks (e.g. POA irradiance, AC power, energy). The Metrics pages edit the catalog. See [[metrics]].
+- **Device type** — a category of supported hardware (gateway, sensor, modem, …) with its spec template. See [[device-types]].
+- **Module / inverter** — the PV panel and DC→AC converter; their spec catalogs are managed here and referenced by each site's blocks. See [[site]].
+- **Modbus template** — a reusable register-address map describing how to read a particular device over Modbus; Template Management is the shared library. See [[channels]].
+- **Lattigo / cell modem** — the cellular-connectivity provider and the SIM/modem hardware that backhauls site data over cellular; Cell Modem Plan Management shows usage. See [[channels]].
+- **API key / IP whitelist** — a company's credentials for the public data API; managed via Company Management (and the orphaned API Management page). See [[data-out]].
+- **Setup status / launch** — the per-site commissioning checklist; Site Launch is the fleet-wide view of it. See [[site]].
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[authentication]] · [[companies]] · [[users]] · [[metrics]] · [[device-types]] · [[alarm-config]] · [[notification]] · [[assets]] · [[activity-logs]] · [[quote]] · [[channels]] · [[data-out]] · [[solar-glossary]]

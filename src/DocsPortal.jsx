@@ -65,7 +65,12 @@ export default function DocsPortal() {
   const [activePage, setActivePage] = useState(null)
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState(() => {
-    try { return localStorage.getItem('docMode') || 'blend' } catch { return 'blend' }
+    // Two modes only: 'audience' (Business) and 'dev' (Developer). Any legacy
+    // value (e.g. the old 'blend') falls back to Business.
+    try {
+      const saved = localStorage.getItem('docMode')
+      return saved === 'dev' || saved === 'audience' ? saved : 'audience'
+    } catch { return 'audience' }
   })
   const [menuOpen, setMenuOpen] = useState(false)
   const onMode = useCallback((m) => {
@@ -255,13 +260,12 @@ function Overview({ sections, documentedCount, onPick }) {
 }
 
 const MODES = [
-  { key: 'audience', label: 'Audience', hint: 'Business view — plain language, no code' },
-  { key: 'blend', label: 'Blend', hint: 'Business + quiet source references' },
-  { key: 'dev', label: 'Developer', hint: 'Full technical detail and file references' },
+  { key: 'audience', label: 'Business', hint: 'Pure business logic — plain language, no code' },
+  { key: 'dev', label: 'Developer', hint: 'Business logic + implementation detail + solar terms' },
 ]
 
 function ModeBar({ mode, onMode }) {
-  const current = MODES.find((m) => m.key === mode) || MODES[1]
+  const current = MODES.find((m) => m.key === mode) || MODES[0]
   return (
     <div className="modebar">
       <div className="modebar-text">

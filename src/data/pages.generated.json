@@ -4,7 +4,11 @@
     "route": "/signin",
     "module": "Auth",
     "purpose": "Email/password login form. Issues access and refresh tokens on success, applies user theme preference, and handles cross-origin redirects to the reports app.",
-    "actions": ["Log in with email and password", "Navigate to sign-up", "Navigate to forgot password"],
+    "actions": [
+      "Log in with email and password",
+      "Navigate to sign-up",
+      "Navigate to forgot password"
+    ],
     "flow": "flows/authentication.md"
   },
   {
@@ -12,7 +16,10 @@
     "route": "/signup",
     "module": "Auth",
     "purpose": "New-user registration form. Collects name, email, phone, and password; validates reCAPTCHA; creates a PENDING account and sends an email-verification link.",
-    "actions": ["Create account", "Trigger reCAPTCHA challenge"],
+    "actions": [
+      "Create account",
+      "Trigger reCAPTCHA challenge"
+    ],
     "flow": "flows/authentication.md"
   },
   {
@@ -20,15 +27,20 @@
     "route": "/signup/verification",
     "module": "Auth",
     "purpose": "Holding page shown after signup while the user's email is unverified. Lets the user resend the verification email (rate-limited) or update their email address before verifying.",
-    "actions": ["Resend verification email", "Change email address before verifying"],
+    "actions": [
+      "Resend verification email",
+      "Change email address before verifying"
+    ],
     "flow": "flows/authentication.md"
   },
   {
     "name": "Email Verification",
     "route": "/signup/verify",
     "module": "Auth",
-    "purpose": "Consumes the CONFIRM_EMAIL JWT from the email link, activates the account (PENDING → ACTIVE), and auto-assigns the user to a matching company if the email domain matches.",
-    "actions": ["Auto-verify on page load via URL token"],
+    "purpose": "Consumes the CONFIRM_EMAIL JWT from the email link, activates the account (PENDING \u2192 ACTIVE), and auto-assigns the user to a matching company if the email domain matches.",
+    "actions": [
+      "Auto-verify on page load via URL token"
+    ],
     "flow": "flows/authentication.md"
   },
   {
@@ -36,7 +48,9 @@
     "route": "/reset-password",
     "module": "Auth",
     "purpose": "Accepts an email address and sends a password-reset link. Always returns success to prevent email enumeration.",
-    "actions": ["Request password reset email"],
+    "actions": [
+      "Request password reset email"
+    ],
     "flow": "flows/authentication.md"
   },
   {
@@ -44,7 +58,9 @@
     "route": "/reset-password/verify",
     "module": "Auth",
     "purpose": "Consumes the RESET_PASSWORD JWT from the email link and sets a new password. Requires password confirmation.",
-    "actions": ["Set new password via email token"],
+    "actions": [
+      "Set new password via email token"
+    ],
     "flow": "flows/authentication.md"
   },
   {
@@ -52,7 +68,11 @@
     "route": "/portfolio",
     "module": "Portfolio",
     "purpose": "Displays all company sites on an interactive Google Map with color-coded markers, alongside status summary tables and alarm summaries. Entry point to the fleet overview.",
-    "actions": ["View all sites on map", "Filter map by status or alarm", "Navigate to site detail"],
+    "actions": [
+      "View all sites on map",
+      "Filter map by status or alarm",
+      "Navigate to site detail"
+    ],
     "flow": "flows/portfolio.md"
   },
   {
@@ -60,7 +80,12 @@
     "route": "/status/portfolio",
     "module": "Portfolio",
     "purpose": "Detailed table view of all sites with service status, connection status, event counts, and setup progress. Supports search, filtering, and site-note editing. Auto-refreshes every minute.",
-    "actions": ["View fleet details table", "Search sites by name", "Filter by status", "Add or edit site notes"],
+    "actions": [
+      "View fleet details table",
+      "Search sites by name",
+      "Filter by status",
+      "Add or edit site notes"
+    ],
     "flow": "flows/portfolio.md"
   },
   {
@@ -68,7 +93,9 @@
     "route": "/portfolio/energy-kpis",
     "module": "Portfolio",
     "purpose": "Analytics sub-page showing fleet-wide energy performance charts and key performance indicators.",
-    "actions": ["View energy charts"],
+    "actions": [
+      "View energy charts"
+    ],
     "flow": "flows/portfolio.md"
   },
   {
@@ -76,7 +103,9 @@
     "route": "/portfolio/triage",
     "module": "Portfolio",
     "purpose": "Analytics sub-page showing fault monitoring, alert severity, and triage-focused diagnostics for the fleet.",
-    "actions": ["View triage charts"],
+    "actions": [
+      "View triage charts"
+    ],
     "flow": "flows/portfolio.md"
   },
   {
@@ -84,7 +113,9 @@
     "route": "/portfolio/irradiation",
     "module": "Portfolio",
     "purpose": "Analytics sub-page showing irradiance and solar resource analytics for the fleet.",
-    "actions": ["View irradiation charts"],
+    "actions": [
+      "View irradiation charts"
+    ],
     "flow": "flows/portfolio.md"
   },
   {
@@ -92,7 +123,12 @@
     "route": "/site/:siteId",
     "module": "Site",
     "purpose": "KPI dashboard showing real-time energy metrics, status badges, site location map, and site plan for one installation.",
-    "actions": ["View KPI table", "View site map", "View site plan", "Navigate to sub-pages"],
+    "actions": [
+      "View KPI table",
+      "View site map",
+      "View site plan",
+      "Navigate to sub-pages"
+    ],
     "flow": "flows/site.md"
   },
   {
@@ -100,7 +136,9 @@
     "route": "/site/:siteId/live-view",
     "module": "Site",
     "purpose": "Real-time channel data and live readings from the site's connected devices.",
-    "actions": ["View live data stream"],
+    "actions": [
+      "View live data stream"
+    ],
     "flow": "flows/site.md"
   },
   {
@@ -108,7 +146,11 @@
     "route": "/site/:siteId/site-setup-tracker",
     "module": "Site",
     "purpose": "Commissioning checklist showing setup step progress, completion status, and responsibility assignments.",
-    "actions": ["Track setup steps", "Mark steps complete", "Add notes"],
+    "actions": [
+      "Track setup steps",
+      "Mark steps complete",
+      "Add notes"
+    ],
     "flow": "flows/site.md"
   },
   {
@@ -116,7 +158,12 @@
     "route": "/site/:siteId/general-info",
     "module": "Site",
     "purpose": "Editable site metadata including name, location, capacity, contacts, subscription details, and energy model configuration.",
-    "actions": ["Edit site info", "Change managers", "Update tags", "Modify blocks"],
+    "actions": [
+      "Edit site info",
+      "Change managers",
+      "Update tags",
+      "Modify blocks"
+    ],
     "flow": "flows/site.md"
   },
   {
@@ -124,7 +171,10 @@
     "route": "/site/:siteId/hardware-services",
     "module": "Site",
     "purpose": "Hardware inventory, asset records, and service history for the site.",
-    "actions": ["View hardware", "View service records"],
+    "actions": [
+      "View hardware",
+      "View service records"
+    ],
     "flow": "flows/site.md"
   },
   {
@@ -132,55 +182,89 @@
     "route": "/site/:siteId/energy-model",
     "module": "Site",
     "purpose": "Predicted and learned energy model data, monthly power forecasts, and capacity test analysis.",
-    "actions": ["View predicted model", "View learned model", "View capacity test"],
+    "actions": [
+      "View predicted model",
+      "View learned model",
+      "View capacity test"
+    ],
     "flow": "flows/site.md"
   },
   {
     "name": "Virtual Site Builder",
     "route": "/site/:siteId/site-builder",
     "module": "Site",
-    "purpose": "Drag-and-drop visual builder for mapping device topology, connections, and site flow (Admin/SuperAdmin only).",
-    "actions": ["Design site flow", "Map device topology", "Deploy changes"],
-    "flow": "flows/site.md"
+    "purpose": "Drag-and-drop visual builder (React Flow) for mapping a site's device topology, assigning channels to nodes, and deploying that mapping onto channel.siteMap (Admin/SuperAdmin only).",
+    "actions": [
+      "Design site flow graph (nodes + edges)",
+      "Drag channels onto device nodes",
+      "Auto-generate template from site blocks",
+      "Sync canvas with site blocks (drift)",
+      "Autosave / Save flow",
+      "Revert to last deployed layout",
+      "Deploy (configChannelSiteMap)"
+    ],
+    "flow": "flows/site-builder.md"
   },
   {
     "name": "Channels",
     "route": "/site/:siteId/channels",
     "module": "Site",
     "purpose": "Configuration and status of all data channels including DENO, gateway, modem, Modbus, and OPC servers.",
-    "actions": ["Configure channels", "View channel status", "Edit channel settings"],
-    "flow": "flows/site.md"
+    "actions": [
+      "Configure channels",
+      "View channel status",
+      "Edit channel settings"
+    ],
+    "flow": "flows/channels.md"
   },
   {
     "name": "Denobox",
     "route": "/site/:siteId/denobox",
     "module": "Site",
-    "purpose": "File browser for accessing files stored on the site's Denobox device, including configurations and logs.",
-    "actions": ["Browse files", "Download files"],
-    "flow": "flows/site.md"
+    "purpose": "Virtual file browser for the site's S3-backed Denobox storage. Supports upload, download, drag-and-drop moves, note annotations, full-text search (including S3 metadata), and delete with automatic event logging. HEIC images are converted to WebP in-browser before upload.",
+    "actions": [
+      "Upload files (single or multi)",
+      "Browse folders",
+      "Search files by name or note",
+      "Download files",
+      "Preview PDF/Word/Excel/CSV/image files in-browser",
+      "Edit file notes",
+      "Drag files between folders",
+      "Delete files"
+    ],
+    "flow": "flows/storage.md"
   },
   {
     "name": "Capacity Test",
     "route": "/site/:siteId/capacity-test",
     "module": "Site",
-    "purpose": "Multi-step wizard to configure, run, and download capacity test results for the site.",
-    "actions": ["Configure test", "Run test", "Download results"],
-    "flow": "flows/site.md"
+    "purpose": "3-step wizard (Check Data -> Input Test Conditions -> Review Report) that runs an ASTM/IEC capacity test for one site against the external Matrix Python service and auto-downloads the generated report.",
+    "actions": [
+      "Review regression trend (sitePowerAnalysis chart)",
+      "Set TRC, filters, soiling, shade, test method",
+      "Run capacity test (runCapacityTest mutation)",
+      "Download draft report"
+    ],
+    "flow": "flows/tests.md"
   },
   {
     "name": "Channel Map",
     "route": "/site/:siteId/channel-map",
     "module": "Site",
     "purpose": "Visual layout map showing physical channel positions and relationships on the site.",
-    "actions": ["View channel layout"],
-    "flow": "flows/site.md"
+    "actions": [
+      "View channel layout"
+    ],
+    "flow": "flows/channels.md"
   },
   {
     "name": "Learned Shade Profile",
     "route": "/site/:siteId/learned-shade-profile",
     "module": "Site",
     "purpose": "Shade profile learned from historical irradiance data, showing seasonal shading patterns.",
-    "actions": ["View shade profile"],
+    "actions": [
+      "View shade profile"
+    ],
     "flow": "flows/site.md"
   },
   {
@@ -188,7 +272,9 @@
     "route": "/site/:siteId/benchmark-alignment",
     "module": "Site",
     "purpose": "Tool to align energy model benchmarks against measured data and optimize performance predictions.",
-    "actions": ["Align benchmarks"],
+    "actions": [
+      "Align benchmarks"
+    ],
     "flow": "flows/site.md"
   },
   {
@@ -196,119 +282,294 @@
     "route": "/site/:siteId/energy-accounting",
     "module": "Site",
     "purpose": "Detailed energy accounting and disaggregation analytics dashboard for the site.",
-    "actions": ["View energy accounting", "View disaggregation"],
+    "actions": [
+      "View energy accounting",
+      "View disaggregation"
+    ],
     "flow": "flows/site.md"
   },
   {
     "name": "Notifications",
     "route": "/site/:siteId/notifications",
     "module": "Site",
-    "purpose": "Notification settings for alarms, delivery channels, and notification delay preferences.",
-    "actions": ["Configure alarms", "Set notification channels", "Set delays"],
-    "flow": "flows/site.md"
+    "purpose": "Per-site alarm notification rules: each rule maps an AlarmConfig to delivery channels (EMAIL_SITE_MANAGERS, APP, DAILY_REPORT), explicit email addresses, and a delivery delay (IMMEDIATE, TWO_HOURS, NEXT_DAY). Only visible to Super Admins or sites on the Enterprise subscription plan.",
+    "actions": [
+      "Add notification rule",
+      "Remove notification rule",
+      "Set alarm config",
+      "Set delivery channels",
+      "Add email recipients",
+      "Set urgency/delay",
+      "Save settings"
+    ],
+    "flow": "flows/notification.md"
   },
   {
     "name": "Site Status",
     "route": "/status/site/:siteId",
     "module": "Status",
-    "purpose": "Real-time status of all channels for one site, showing connection state, last update time, and current metrics.",
-    "actions": ["View channel status", "View channel metrics", "Add channel notes"],
+    "purpose": "Per-site status. SiteStatusView polls GET_CHANNELS (60s) and renders an optional gateway remote-management table plus an ACTIVE-channel table with key metric, lastReportedAt, binary Data Service Status (channel connectionStatus), open/30-day alarm counts, and notes. connectionStatus is a stored field; alarm counts are computed server-side via event lookups.",
+    "actions": [
+      "View per-channel connection status",
+      "View gateway remote-management status",
+      "Drill into Channel Status",
+      "Add channel notes"
+    ],
     "flow": "flows/status.md"
   },
   {
     "name": "Portfolio Status",
     "route": "/status/portfolio",
     "module": "Status",
-    "purpose": "Fleet-wide status table showing all sites with connection, service status, alarms, tasks, and setup progress.",
-    "actions": ["View fleet status", "Filter sites", "Add site notes"],
+    "purpose": "Fleet-wide status table. PortfolioStatusView polls GET_SITES (60s, showNotes:true) and renders one row per company-scoped site: 3-state connection dot (stored connectionStatus, green/yellow/red), service status, lastReportedAt, 7d EPI (kpi.week.epi, color-tiered), critical-alarm and flagged-task counts (computed via event lookups), customer/Denowatts setup status, and notes. Rows link to Site Status, Analytics, Events Feed, and the setup tracker.",
+    "actions": [
+      "View fleet connection/service status",
+      "Filter by service/connection status",
+      "Drill into Site Status / Analytics / Events",
+      "Add site notes"
+    ],
     "flow": "flows/status.md"
   },
   {
     "name": "Channel Status",
     "route": "/status/channel",
     "module": "Status",
-    "purpose": "Detailed status view for a selected channel, showing connection state, metrics, and gateway remote management status.",
-    "actions": ["View channel metrics", "View gateway settings"],
+    "purpose": "Detailed status view for one selected channel. ChannelMetricsTable polls getChannelMetrics (60s) to show the latest per-metric values from the channelraws time-series collection, plus info cards (Channel ID, Source, Status, Last Reported from lastConnectedAt). Channel/site selection and ?site=&channel= URL sync live in ChannelSettings.",
+    "actions": [
+      "Select a channel",
+      "View latest channel metric values",
+      "Adjust decimal precision",
+      "Manual refresh"
+    ],
     "flow": "flows/status.md"
   },
   {
     "name": "Company",
     "route": "/settings/company",
     "module": "Settings",
-    "purpose": "Company profile page where users can view and edit their company information (name, email, contact details) and see all users assigned to the company with their roles and status.",
-    "actions": ["View company profile", "Edit company information", "View company users", "Search users by name"],
-    "flow": "flows/settings.md"
+    "purpose": "Own-company profile page. Loads the current user's company (GET_COMAPANY by currentUser.company), lets them view/edit company info, and lists users assigned to the company with roles/status. Non-SuperAdmin edits are reduced to siteTags only by CompaniesService.update.",
+    "actions": [
+      "View company profile",
+      "Edit company information (siteTags for non-SuperAdmin)",
+      "View company users",
+      "Search users by name"
+    ],
+    "flow": "flows/companies.md"
   },
   {
     "name": "Services",
     "route": "/settings/service-management",
     "module": "Settings",
     "purpose": "Service management page for configuring service contracts, SLAs, and support terms associated with the company.",
-    "actions": ["View service contracts", "Configure service terms"],
+    "actions": [
+      "View service contracts",
+      "Configure service terms"
+    ],
     "flow": "flows/settings.md"
   },
   {
     "name": "Quotation Management",
     "route": "/settings/quote-management",
-    "module": "Settings",
-    "purpose": "Quotation management hub for creating and managing quotes for new sites. Includes bulk creation, editing, and renewal workflows.",
-    "actions": ["Create quote", "Bulk create quotes", "Edit quote", "View quote history", "Renew site"],
-    "flow": "flows/settings.md"
+    "module": "Quote",
+    "purpose": "Paginated list of all quotes with summary stats (total count, total amount, average amount). Default filter excludes WITHDRAWN and DELETED. Supports server-side search, status filter, and sort by AC nameplate, ship date, create date, or expiry. SUPER_ADMIN can export to XLSX and delete quotes.",
+    "actions": [
+      "View quote list",
+      "Filter by status",
+      "Sort by column",
+      "Search by site name / requestor / company / reference ID",
+      "Create quote",
+      "Bulk create quotes",
+      "Edit quote",
+      "Delete quote (SUPER_ADMIN)",
+      "Export to XLSX (SUPER_ADMIN)"
+    ],
+    "flow": "flows/quote.md"
+  },
+  {
+    "name": "Create Quote",
+    "route": "/settings/quote-management/create",
+    "module": "Quote",
+    "purpose": "5-step wizard for creating a single quote: (1) Project - owner and site, (2) Location - address, (3) Details - mounting/module/data acquisition, (4) Services - tier/term/options with live QuickBooks product pricing, (5) Review - editable product table with quantities and discounts.",
+    "actions": [
+      "Select owner",
+      "Toggle existing/new site",
+      "Enter site details",
+      "Select service tier and term",
+      "View auto-calculated product quantities",
+      "Adjust quantities and discounts",
+      "Submit quote"
+    ],
+    "flow": "flows/quote.md"
+  },
+  {
+    "name": "Edit Quote",
+    "route": "/settings/quote-management/:id",
+    "module": "Quote",
+    "purpose": "Edit an existing quote using the same 5-step wizard. Pre-populates all fields from the stored quote. For group (renewal) quotes, navigates to the renewal edit page instead.",
+    "actions": [
+      "Edit quote details",
+      "Update products",
+      "Change status to WITHDRAWN (non-admin)",
+      "Change any status (SUPER_ADMIN)"
+    ],
+    "flow": "flows/quote.md"
+  },
+  {
+    "name": "Quote Document View",
+    "route": "/settings/quote-management/:id/quote-view",
+    "module": "Quote",
+    "purpose": "Rendered quote document showing cover page, introduction, product table, and terms. For signed quotes, shows DocuSeal signing URL. ADMIN/USER can initiate the DocuSeal signing workflow from here.",
+    "actions": [
+      "View quote document",
+      "Initiate DocuSeal signing (ADMIN/USER)",
+      "View group quote child sites table"
+    ],
+    "flow": "flows/quote.md"
+  },
+  {
+    "name": "Bulk Create Quotes",
+    "route": "/settings/quote-management/bulk-create",
+    "module": "Quote",
+    "purpose": "Upload an XLSX file to bulk-create multiple quotes in one operation. Products are auto-calculated per site configuration (no manual product list required). All quotes share the same owner. Fails entirely if any row is invalid.",
+    "actions": [
+      "Upload XLSX template",
+      "Validate rows",
+      "Bulk create quotes"
+    ],
+    "flow": "flows/quote.md"
+  },
+  {
+    "name": "Quote Order",
+    "route": "/settings/quote-management/order/:dealId",
+    "module": "Quote",
+    "purpose": "Order form for a signed quote. Collects billing and shipping contact info, confirmed ship date, and order documents. On submit, creates a QuickBooks invoice and transitions the quote to ORDERED status. Sends order confirmation email to quote owner and QB customer.",
+    "actions": [
+      "Enter billing info",
+      "Enter shipping info",
+      "Upload order documents",
+      "Place order (creates QB invoice)"
+    ],
+    "flow": "flows/quote.md"
+  },
+  {
+    "name": "Renew Quote",
+    "route": "/settings/quote-management/renew",
+    "module": "Quote",
+    "purpose": "Create a new renewal group quote for one or more existing sites. Pre-populates products based on installed Deno sensor types and current subscription plan. Creates a group parent quote plus one child quote per site.",
+    "actions": [
+      "Select sites for renewal",
+      "Adjust renewal products and quantities",
+      "Set next renewal date",
+      "Submit renewal quote"
+    ],
+    "flow": "flows/quote.md"
+  },
+  {
+    "name": "Edit Renewal Quote",
+    "route": "/settings/quote-management/renew/:id",
+    "module": "Quote",
+    "purpose": "Edit an existing renewal group quote. Upserts child quotes per site, recalculates group totals from all children. Sends update notification email.",
+    "actions": [
+      "Edit renewal products per site",
+      "Add renewal add-on products",
+      "Update next renewal date",
+      "Save renewal quote"
+    ],
+    "flow": "flows/quote.md"
   },
   {
     "name": "Notification Management",
     "route": "/settings/notification-management",
     "module": "Settings",
-    "purpose": "Centralized notification and alert rule configuration. Set thresholds, delivery channels, and escalation policies for site alarms.",
-    "actions": ["Configure alert rules", "Set thresholds", "Configure delivery channels"],
-    "flow": "flows/settings.md"
+    "purpose": "Company-wide notification settings table (11 rows: 3 alarm severities + 8 event categories). For each row, configure whether in-app and email notifications are enabled, which site managers and additional users receive them, and whether the rule is active. Super Admins can select any company; other users see their own company. Changes are persisted to Company.notificationSettings via updateCompany mutation.",
+    "actions": [
+      "Toggle notification rule active/inactive",
+      "Enable/disable in-app notifications per type",
+      "Enable/disable email notifications per type",
+      "Select site managers as recipients",
+      "Add other specific users as recipients",
+      "Save all settings"
+    ],
+    "flow": "flows/notification.md"
   },
   {
     "name": "Global Alarm Configuration",
     "route": "/settings/global-alarm-configuration",
     "module": "Settings",
-    "purpose": "System-wide alarm settings and thresholds that apply across all sites in the company.",
-    "actions": ["Configure alarm thresholds", "Enable/disable alarms", "Set alarm severity levels"],
-    "flow": "flows/settings.md"
+    "purpose": "System-wide alarm rule definitions (AlarmConfig records) applied to every site. Each rule defines a target (site metric / channel metric / channel status), an effect, a severity (CRITICAL/HIGH/ROUTINE), channel prefixes, a metric, an operator (>, <, =) plus threshold, a suppression level, optional delay/condition, and a notifySupport flag. Editing (create/update/delete/reorder/bulk-save) is Super Admin only; other users see a read-only view. Rules are consumed downstream by the alarm-event pipeline and webhook notifications.",
+    "actions": [
+      "Add new alarm rule",
+      "Edit alarm fields (target, effect, severity, metric, operator, threshold, suppression, delay, condition, notify support)",
+      "Reorder rules (drag and drop)",
+      "Duplicate alarm rule",
+      "Delete alarm rule",
+      "Bulk save all changes"
+    ],
+    "flow": "flows/alarm-config.md"
   },
   {
     "name": "Metrics",
     "route": "/metrics",
     "module": "Settings",
-    "purpose": "Global metric definitions and custom metric library accessible to all authenticated users, regardless of company assignment.",
-    "actions": ["View metric definitions", "Search metrics"],
-    "flow": "flows/settings.md"
+    "purpose": "Standalone read-only metric library listing every global metric definition (name, display name, unit, tags, channel prefixes, KPI flag/expression) via the public `metrics` GraphQL query. Accessible to all authenticated users regardless of company.",
+    "actions": [
+      "View metric definitions",
+      "Search metrics",
+      "View per-company metric translations"
+    ],
+    "flow": "flows/metrics.md"
   },
   {
     "name": "Device Types",
     "route": "/device-types",
-    "module": "Settings",
-    "purpose": "Device type library showing specifications for PV modules, inverters, and other solar equipment. Accessible to all authenticated users.",
-    "actions": ["View device type library", "Search devices"],
-    "flow": "flows/settings.md"
+    "module": "Device Types",
+    "purpose": "Read-only reference catalog of channel/signal device types as a Category -> Major -> Minor taxonomy keyed by a unique dotted 'prefix', each with an optional key metric. Renders all rows from the public deviceTypes GraphQL query in a merged-row table; the same data is reused for Modbus channel classification, Site Builder matching, metrics, and alarm config. No create/edit/delete.",
+    "actions": [
+      "View device type taxonomy table (Category, Major, Minor, Prefix, Key Metric)",
+      "Search/filter rows client-side by category, major, minor, or prefix"
+    ],
+    "flow": "flows/device-types.md"
   },
   {
     "name": "Company Management",
     "route": "/settings/company-management",
     "module": "Settings",
-    "purpose": "SuperAdmin page for managing multiple companies in the system. View, create, and edit all company profiles.",
-    "actions": ["View all companies", "Create company", "Edit company", "Search companies"],
-    "flow": "flows/settings.md"
+    "purpose": "SuperAdmin-only page (renders Access Denied otherwise) for managing all companies as the multi-tenant boundary. Server-side paginated/searchable list (companiesWithPaginate), create/edit companies, and generate/revoke the per-company data-out API key (updateApiKey GENERATE/REVOKE).",
+    "actions": [
+      "View all companies (paginated, searchable)",
+      "Create company",
+      "Edit company",
+      "Generate API key",
+      "Revoke API key",
+      "Search companies"
+    ],
+    "flow": "flows/companies.md"
   },
   {
     "name": "Users Management",
     "route": "/settings/users-management",
-    "module": "Settings",
-    "purpose": "SuperAdmin page for managing users across all companies. Edit roles, deactivate users, resend invitations, and manage permissions.",
-    "actions": ["View all users", "Edit user role", "Deactivate user", "Resend invitation", "Search users"],
-    "flow": "flows/settings.md"
+    "module": "Users",
+    "purpose": "SuperAdmin-only page (ProtectedRoute redirects others to /not-found) listing all registered users across all companies. Renders an Ant Design table from GET_USERS with inline-editable Company, Role (type), and Status dropdowns that fire the updateUser mutation immediately on change. Client-side debounced search/filter across name, email, phone, company, role, status, last-active, and registered date. Status options exclude PENDING; there is no working create-user UI (the CreateUserModal is a dead stub).",
+    "actions": [
+      "View all registered users",
+      "Change a user's company (updateUser)",
+      "Change a user's role/type (updateUser)",
+      "Change a user's status, e.g. soft-delete (updateUser)",
+      "Search and filter users by column"
+    ],
+    "flow": "flows/users.md"
   },
   {
     "name": "Template Management",
     "route": "/settings/template-management",
     "module": "Settings",
-    "purpose": "SuperAdmin page for managing Modbus register templates used for device driver configuration and data parsing.",
-    "actions": ["View templates", "Create template", "Edit template", "Delete template"],
+    "purpose": "SuperAdmin bulk editor for Modbus register-mapping templates (component dir modbus-template). Loads all templates (GET_MODBUS_TEMPLATES), stages row edits, and commits via BULK_UPDATE_MODBUS_TEMPLATES (refetches templates + channels). Warns on navigation with unsaved staged changes (useBlocker).",
+    "actions": [
+      "View templates",
+      "Filter templates",
+      "Stage bulk edits across rows",
+      "Bulk save (BULK_UPDATE_MODBUS_TEMPLATES)"
+    ],
     "flow": "flows/settings.md"
   },
   {
@@ -316,7 +577,12 @@
     "route": "/settings/module-management",
     "module": "Settings",
     "purpose": "SuperAdmin page for managing PV module specifications including power rating, efficiency, temperature coefficient, and manufacturer details.",
-    "actions": ["View modules", "Create module", "Edit module specs", "Delete module"],
+    "actions": [
+      "View modules",
+      "Create module",
+      "Edit module specs",
+      "Delete module"
+    ],
     "flow": "flows/settings.md"
   },
   {
@@ -324,47 +590,86 @@
     "route": "/settings/inverter-management",
     "module": "Settings",
     "purpose": "SuperAdmin page for managing inverter device specifications including power rating, input voltage, topology, and operating parameters.",
-    "actions": ["View inverters", "Create inverter", "Edit inverter specs", "Delete inverter"],
+    "actions": [
+      "View inverters",
+      "Create inverter",
+      "Edit inverter specs",
+      "Delete inverter"
+    ],
     "flow": "flows/settings.md"
   },
   {
     "name": "Asset Management",
     "route": "/settings/asset-management",
     "module": "Settings",
-    "purpose": "SuperAdmin page for managing the physical asset inventory including modems, gateways, Denos, and other hardware with serial numbers and status.",
-    "actions": ["View assets", "Create asset", "Edit asset", "Track asset status", "Search assets"],
-    "flow": "flows/settings.md"
+    "purpose": "SuperAdmin page for managing the physical hardware inventory across five device types (Deno, Radio, Aux Pyranometer, Gateway, Modem). Supports paginated browsing, free-text search, create/edit operations with type-specific forms, calibration tracking, soft-delete, and per-type flag (GOOD/WATCH/REPLACE/REPLACE_URGENT/MAINTENANCE_REQUIRED/RETIRED).",
+    "actions": [
+      "View assets by type (tabbed: Deno, Radio, Aux Pyranometer, Gateway, Modem)",
+      "Paginated browsing with server-side search",
+      "Create asset (type-specific form in modal)",
+      "Edit asset (type-specific edit form in modal)",
+      "View asset details (read-only detail modal)",
+      "Track calibration certificates with date and S3 download link",
+      "Set asset flag/condition status",
+      "Soft-delete asset (sets deletedAt via updateAsset mutation)"
+    ],
+    "flow": "flows/assets.md"
   },
   {
     "name": "Remote Management",
     "route": "/settings/remote-management",
     "module": "Settings",
-    "purpose": "SuperAdmin page for configuring remote access tunneling and device management capabilities for gateway and field equipment.",
-    "actions": ["Configure remote access", "Manage tunnels", "Set permissions"],
-    "flow": "flows/settings.md"
+    "purpose": "SuperAdmin page for reading and writing live firmware configuration on Deno sensor devices via the Python Matrix proxy service. Supports reading full config, writing config, fetching array/block data, fetching calibration data, and issuing reset/launch commands to individual Deno units identified by serial number.",
+    "actions": [
+      "Select Deno asset by serial number",
+      "Read live firmware configuration (getDenoConfig)",
+      "Write updated firmware configuration (updateDenoConfig)",
+      "Fetch block/array data subset (getDenoConfigBlockData)",
+      "Fetch calibration data subset (getDenoConfigCalibrationData)",
+      "Reset and read Deno in one operation (getDenoConfigResetAndReadData)",
+      "Reset Deno firmware (getDenoConfigResetData)",
+      "Launch Deno firmware (getDenoConfigLaunchData)"
+    ],
+    "flow": "flows/assets.md"
   },
   {
     "name": "Metrics Management",
     "route": "/settings/metrics-management",
     "module": "Settings",
-    "purpose": "SuperAdmin page for defining custom metrics and metric aggregations used throughout the platform for analytics and reporting.",
-    "actions": ["View custom metrics", "Create metric", "Edit metric", "Delete metric"],
-    "flow": "flows/settings.md"
+    "purpose": "SuperAdmin CRUD admin for the canonical metric library (the `metrics` collection). Server-side paginated/searchable/tag-filtered table (metricsWithPaginate) for creating and editing metric definitions (name, display name, unit, channel prefixes, tags, KPI flag + expression), and managing per-company name translations (companymetrics).",
+    "actions": [
+      "View metrics (paginated, searchable, tag-filtered)",
+      "Create metric (createMetric)",
+      "Edit metric (updateMetric)",
+      "Build KPI expression",
+      "Add/select translation company (createCompanyMetric)",
+      "Set per-company metric translation (updateCompanyMetric)"
+    ],
+    "flow": "flows/metrics.md"
   },
   {
     "name": "System Notification",
     "route": "/settings/system-notification",
     "module": "Settings",
-    "purpose": "SuperAdmin page for configuring system-wide email and SMS notification settings, templates, and delivery channels.",
-    "actions": ["Configure email settings", "Configure SMS settings", "Edit notification templates"],
-    "flow": "flows/settings.md"
+    "purpose": "Super Admin page to manage the singleton system-wide banner notification. The banner appears as a modal on every user's next login when status is ON. Only one system notification record can exist; creating when one exists is a no-op. Updating advances updatedAt, causing the modal to re-appear for all users.",
+    "actions": [
+      "Create system notification",
+      "Toggle banner ON/OFF",
+      "Edit banner message",
+      "Save changes"
+    ],
+    "flow": "flows/notification.md"
   },
   {
     "name": "Cell Modem Plan Management",
     "route": "/settings/cell-modem-management",
     "module": "Settings",
-    "purpose": "SuperAdmin page for managing cellular SIM cards and data plans via Lattigo integration. Monitor data usage, suspend/restore SIMs, and view usage analytics by site.",
-    "actions": ["View SIM status", "Monitor data usage", "Suspend/restore SIM", "View usage analytics"],
+    "purpose": "SuperAdmin Lattigo cellular-usage analytics dashboard. Server-side paginated per-site data-usage table (GET_LATTIGO_USAGE_ANALYTICS with page/pageSize and optional startDate/endDate); columns and a 'Days With Data' column adapt to whether a date range is applied. Per-modem suspend/restore lives on the Channels accordion card, not here.",
+    "actions": [
+      "View per-site cellular data usage (paginated)",
+      "Apply optional date range filter",
+      "Refetch usage analytics"
+    ],
     "flow": "flows/settings.md"
   },
   {
@@ -372,39 +677,79 @@
     "route": "/settings/site-launch",
     "module": "Settings",
     "purpose": "SuperAdmin page for managing site go-live configuration and commissioning checklist status across the fleet.",
-    "actions": ["View launch status", "Update site launch status"],
+    "actions": [
+      "View launch status",
+      "Update site launch status"
+    ],
     "flow": "flows/settings.md"
   },
   {
     "name": "Activity Logs",
     "route": "/settings/activity-logs",
     "module": "Settings",
-    "purpose": "SuperAdmin audit trail showing all user actions in the system with timestamp, user, action type, affected entity, and change details.",
-    "actions": ["View activity logs", "Filter by user", "Filter by action type", "Search logs", "Export logs"],
+    "purpose": "SuperAdmin-only, append-only audit trail of every create/update/delete recorded automatically via a global Mongoose plugin. Shows timestamp, acting user (or 'System'), action type, affected collection and document id, and a JSON diff (payload/before/changes) in a detail drawer.",
+    "actions": [
+      "View paginated activity logs",
+      "Search by document id or user (id, name, email) or site/channel/asset/company metadata",
+      "Filter by collection (target)",
+      "Filter by action type (CREATE/UPDATE/DELETE)",
+      "Filter by date range",
+      "Sort by timestamp",
+      "Inspect payload/before/changes in detail drawer"
+    ],
+    "flow": "flows/activity-logs.md"
+  },
+  {
+    "name": "API Management",
+    "route": "/settings/api-management",
+    "module": "Settings",
+    "purpose": "SuperAdmin per-company API-key and IP-whitelist admin. Table of companies (GET_COMPANIES); per row, Generate/Revoke the company's public data-out API key (UPDATE_API_KEY with Generate/Revoke) and remove whitelisted IPs (UPDATE_COMAPNY, IP validity checked by isValidIP). ORPHANED ROUTE: ProtectedRoute-gated but has no settings-menu entry and is linked from nowhere except the router; reachable only by direct URL. Likely superseded by the API-key controls in Company Management / Company. Flag for human review.",
+    "actions": [
+      "View companies and their API keys",
+      "Generate API key (SuperAdmin)",
+      "Revoke API key (SuperAdmin)",
+      "Remove whitelisted IP",
+      "Search companies"
+    ],
     "flow": "flows/settings.md"
   },
   {
     "name": "Analytics Dashboard",
     "route": "/analytics/:siteId?",
     "module": "Analytics",
-    "purpose": "Interactive time-series charting system for visualizing solar site data at channel, site, and portfolio levels. Select from 15+ chart types, customize date ranges, filter by channels and metrics, and export charts as PNG/PDF.",
-    "actions": ["Select chart type", "Select site(s)", "Adjust date range", "Select metrics and channels", "View interactive chart", "Export chart", "Auto-refresh"],
+    "purpose": "Interactive time-series charting at channel/site/portfolio levels. Two render engines gated by enableBetaCharts (default ON): the current Plotly/Dash app embedded via dash-embedded-component (VITE_PLOTLY_URL), and a legacy Highcharts path fed by RTK Query (VITE_CHART_URL). Channel zone metadata comes from VITE_MATRIX_URL. The NestJS backend serves only metadata GraphQL (GET_SITES/GET_CHANNELS/GET_METRICS); no backend chart-data resolver exists. State persists in Redux + URL params; interval constrains the max date span.",
+    "actions": [
+      "Select chart type",
+      "Select site(s)",
+      "Adjust date range",
+      "Select metrics and channels",
+      "View interactive chart",
+      "Export chart",
+      "Auto-refresh"
+    ],
     "flow": "flows/analytics.md"
   },
   {
     "name": "Embedded Analytics",
     "route": "/analytics/embedded",
     "module": "Analytics",
-    "purpose": "Stripped-down analytics variant for embedding in third-party tools or custom dashboards.",
-    "actions": ["Configure embedded chart", "Export data"],
+    "purpose": "Stand-alone Plotly/Dash embed (PlotlyEmbeddedDash). Reads all chart params from URL query string (not Redux), looks up the site timezone via GET_SITE, and targets VITE_PLOTLY_URL with 'my-analytics' replaced by 'embedding'. Not company-gated (any authenticated user).",
+    "actions": [
+      "Configure embedded chart via URL params",
+      "Render Dash chart"
+    ],
     "flow": "flows/analytics.md"
   },
   {
     "name": "Energy Accounting",
     "route": "/site/:siteId/energy-accounting",
     "module": "Analytics",
-    "purpose": "Site-level analytics tab using the same charting system, pre-configured to show energy-related charts for that site.",
-    "actions": ["View energy charts", "Adjust date range", "Select metrics"],
+    "purpose": "Site-level analytics tab reusing the AnalyticsPage component (router.tsx:212) and the same Plotly/Dash + legacy-Highcharts charting system, pre-configured for that site's energy charts.",
+    "actions": [
+      "View energy charts",
+      "Adjust date range",
+      "Select metrics"
+    ],
     "flow": "flows/analytics.md"
   },
   {
@@ -412,7 +757,10 @@
     "route": "/field-setup",
     "module": "Field Setup",
     "purpose": "Welcome page for the 3-step field installation wizard. Explains the setup process and guides technicians to begin gateway commissioning.",
-    "actions": ["Read setup instructions", "Start wizard"],
+    "actions": [
+      "Read setup instructions",
+      "Start wizard"
+    ],
     "flow": "flows/field-setup.md"
   },
   {
@@ -420,15 +768,23 @@
     "route": "/field-setup/gateway-setup",
     "module": "Field Setup",
     "purpose": "First step of the wizard: select or validate a gateway device by serial number, confirming it exists in the system.",
-    "actions": ["Select site", "Enter gateway serial number", "Validate gateway"],
+    "actions": [
+      "Select site",
+      "Enter gateway serial number",
+      "Validate gateway"
+    ],
     "flow": "flows/field-setup.md"
   },
   {
     "name": "List Setup",
     "route": "/field-setup/gateway-setup/list-setup",
     "module": "Field Setup",
-    "purpose": "Manage Deno devices already linked to the gateway. Add new Denos or remove existing ones.",
-    "actions": ["View linked Denos", "Add Deno", "Remove Deno"],
+    "purpose": "Hub page after gateway validation: three navigation cards (Gateway Setup -> networking-info, Deno Setup -> deno-list, Verification Test -> verify-installation). Shows the resolved gateway name. Does not add or remove Denos.",
+    "actions": [
+      "Continue to gateway network setup",
+      "Continue to Deno setup",
+      "Continue to verification test"
+    ],
     "flow": "flows/field-setup.md"
   },
   {
@@ -436,63 +792,199 @@
     "route": "/field-setup/gateway-setup/networking-info",
     "module": "Field Setup",
     "purpose": "Configure gateway network settings including IP address, DNS, and gateway parameters.",
-    "actions": ["Configure IP settings", "Set DNS", "Configure network parameters"],
+    "actions": [
+      "Configure IP settings",
+      "Set DNS",
+      "Configure network parameters"
+    ],
     "flow": "flows/field-setup.md"
   },
   {
     "name": "Deno List",
     "route": "/field-setup/gateway-setup/deno-list",
     "module": "Field Setup",
-    "purpose": "Inventory of all Deno devices with status, signal strength, and discovery controls. Verify Denos are connected.",
-    "actions": ["View Deno inventory", "Trigger discovery scan", "Check signal strength"],
+    "purpose": "Table of the Deno channels already linked to the gateway (via config.gateway). Inline-edit Deno name and aux pyranometer orientation/serial; jump to photo upload or live data. There is no discovery scan.",
+    "actions": [
+      "Edit Deno name",
+      "Set aux pyranometer orientation and serial",
+      "Upload or edit Deno photos",
+      "View Deno live data"
+    ],
     "flow": "flows/field-setup.md"
   },
   {
     "name": "Gateway Live Data",
     "route": "/field-setup/gateway-setup/gateway-live-data",
     "module": "Field Setup",
-    "purpose": "Real-time data verification from the gateway. Confirms the gateway is connected and sending data.",
-    "actions": ["View live metrics", "Verify gateway connection"],
-    "flow": "flows/field-setup.md"
+    "purpose": "Real-time data verification from the gateway. Queries the channelRaw GraphQL endpoint to display the latest sensor readings (IRR, Tbom, RSSI, Vcap) from DENO devices, grouped by serial number, with timestamps formatted in the site's local timezone.",
+    "actions": [
+      "View live DENO sensor readings",
+      "Refresh data manually",
+      "Filter by channel or serial number via URL params"
+    ],
+    "flow": "flows/data-out.md"
   },
   {
     "name": "Setup",
     "route": "/field-setup/gateway-setup/setup",
     "module": "Field Setup",
-    "purpose": "Channel configuration and Deno-to-port mapping. Associate discovered Denos with physical channels and configure measurements.",
-    "actions": ["Configure channels", "Map Denos to ports", "Set measurement types"],
+    "purpose": "Full-screen modal to upload installation photos for a channel (gateway or Deno image sets), add notes, and create/update a Maintenance event. Photos go to S3 via POST /storage/denobox/upload; filenames are saved on channel.images.",
+    "actions": [
+      "Upload or remove channel photos",
+      "Save channel notes",
+      "Create or update a Maintenance event"
+    ],
     "flow": "flows/field-setup.md"
   },
   {
     "name": "Verify Installation",
     "route": "/field-setup/gateway-setup/verify-installation",
     "module": "Field Setup",
-    "purpose": "Final verification checklist and site creation. Confirm all settings and create the site record in the system.",
-    "actions": ["Review final checklist", "Create site", "Verify installation"],
-    "flow": "flows/field-setup.md"
+    "purpose": "Timed verification step that polls channelDataCount GraphQL query every minute to confirm DENO devices are actively sending data to the platform. Displays record count per serial number and links to a live data modal showing raw sensor readings for each channel.",
+    "actions": [
+      "Start verification timer",
+      "Pause/resume/stop timer",
+      "View record count per DENO serial number",
+      "Open Live Data modal for a channel",
+      "Refetch data every minute"
+    ],
+    "flow": "flows/data-out.md"
   },
   {
     "name": "Tests",
     "route": "/tests",
     "module": "Tests",
     "purpose": "Performance and diagnostic reporting interface with two modes: View Archive for pre-generated reports or Create New for live test charts. Includes interactive Plotly dashboard with zoom controls, date navigation, and site/timezone-aware filtering.",
-    "actions": ["View archived test reports", "Create new live test", "Select site and report type", "Configure date range", "Navigate date ranges with prev/next", "Zoom snapshot charts"],
+    "actions": [
+      "View archived test reports",
+      "Create new live test",
+      "Select site and report type",
+      "Configure date range",
+      "Navigate date ranges with prev/next",
+      "Zoom snapshot charts"
+    ],
     "flow": "flows/tests.md"
   },
   {
-    "name": "Tests — View Archive",
+    "name": "Tests \u2014 View Archive",
     "route": "/tests?viewMode=viewArchive",
     "module": "Tests",
     "purpose": "View pre-generated archived reports: Capacity Test, Energy Test, or Production and Loss. Each report is a static snapshot that can be zoomed and panned.",
-    "actions": ["Select report type", "Select site", "View snapshot with zoom controls"],
+    "actions": [
+      "Select report type",
+      "Select site",
+      "View snapshot with zoom controls"
+    ],
     "flow": "flows/tests.md"
   },
   {
-    "name": "Tests — Create New",
+    "name": "Tests \u2014 Create New",
     "route": "/tests?viewMode=create",
     "module": "Tests",
     "purpose": "Generate live test charts on demand. Select site, chart type (Capacity, Energy, or Production/Loss), and date range. Date navigation buttons skip to previous/next period of the same duration.",
-    "actions": ["Select chart type", "Select site", "Pick date range or use presets", "Navigate date ranges"],
+    "actions": [
+      "Select chart type",
+      "Select site",
+      "Pick date range or use presets",
+      "Navigate date ranges"
+    ],
     "flow": "flows/tests.md"
+  },
+  {
+    "name": "Events Feed",
+    "route": "/events-feed",
+    "module": "Events",
+    "purpose": "Paginated, filterable activity log of all events across accessible sites \u2014 including operator notes, alarms, maintenance records, tickets, data curation actions, and lessons learned. Supports infinite scroll, multi-filter sidebar, and inline event creation.",
+    "actions": [
+      "Browse paginated event feed (infinite scroll)",
+      "Filter by site, category, severity, date range, status flags",
+      "Search by title or description",
+      "Create new event (modal)",
+      "Acknowledge alarms",
+      "Flag events as tasks",
+      "View alarm group with child alarms",
+      "Navigate to event detail"
+    ],
+    "flow": "flows/events.md"
+  },
+  {
+    "name": "Event Detail",
+    "route": "/events-feed/:id",
+    "module": "Events",
+    "purpose": "Full detail view for a single event, including metadata, site context, images/attachments, threaded comments with @mention support, alarm children, and chart context. Supports editing, commenting, and sharing.",
+    "actions": [
+      "View event full detail",
+      "View/download attached images and files",
+      "Add comment (with @mention)",
+      "Edit event (inline)",
+      "View child alarms",
+      "View associated power analysis chart",
+      "Copy event link"
+    ],
+    "flow": "flows/events.md"
+  },
+  {
+    "name": "Report Templates List",
+    "route": "/reports",
+    "module": "Reports",
+    "purpose": "Lists all report templates accessible to the current user (super-admin sees all companies; others see own company only). Supports search by name, pagination, and company filter for super-admins. Each row links to the template detail/edit view.",
+    "actions": [
+      "Browse and search report templates",
+      "Filter by company (super-admin)",
+      "Navigate to create new template",
+      "Open template detail"
+    ],
+    "flow": "flows/report.md"
+  },
+  {
+    "name": "Create Report Template",
+    "route": "/reports/create",
+    "module": "Reports",
+    "purpose": "Wizard/form to create a new report template. Configures template name, type (FLEET), site selection (specific sites or all-sites), metric columns with aggregation methods, site property columns, custom columns with arithmetic expressions, group-by dimension, and optional scheduled email delivery (frequency, hour, recipients).",
+    "actions": [
+      "Select sites or enable all-sites",
+      "Add metric columns with aggregation",
+      "Add site property columns",
+      "Build custom column expressions",
+      "Configure schedule frequency and recipients",
+      "Save template"
+    ],
+    "flow": "flows/report.md"
+  },
+  {
+    "name": "Edit Report Template",
+    "route": "/reports/:id/edit",
+    "module": "Reports",
+    "purpose": "Edits an existing report template. All fields from creation are editable. Saving re-schedules the Agenda job if notification settings changed. Supports sending a test email with a 1-hour-expiring preview.",
+    "actions": [
+      "Edit template fields",
+      "Send test email",
+      "Toggle scheduled delivery on/off",
+      "Save changes"
+    ],
+    "flow": "flows/report.md"
+  },
+  {
+    "name": "Report Template Detail",
+    "route": "/reports/:id",
+    "module": "Reports",
+    "purpose": "Read-only view of a report template showing full configuration: sites, metrics, custom columns, grouping, and notification settings. Super-admin can view any company's template; others limited to their own company.",
+    "actions": [
+      "View template configuration",
+      "Navigate to edit"
+    ],
+    "flow": "flows/report.md"
+  },
+  {
+    "name": "System Status",
+    "route": "/status/system",
+    "module": "Status Logs",
+    "purpose": "SuperAdmin-only view of overall platform health. The backend systemStatus GraphQL query overlays the latest per-service health logs (statuslogs collection) onto the human-maintained SYSTEM_STATUS settings template and rolls them up to UP / DOWN / PARTIALLY_DEGRADED. Surfaced as the header status dot (currently commented out) linking to status.denowatts.com; also exposed via public REST /status-logs endpoints for an external status page.",
+    "actions": [
+      "View overall system status (UP/DOWN/PARTIALLY_DEGRADED)",
+      "View per-service and per-sub-service health",
+      "Open external status page (status.denowatts.com)"
+    ],
+    "flow": "flows/status-logs.md"
   }
 ]

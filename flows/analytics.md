@@ -2,214 +2,214 @@
 title: Analytics
 owner: alamin-nifty
 status: draft
-version: 1
-updated_at: 2026-06-05
+version: 3
+updated_at: 2026-06-10
 ---
 
 # Analytics
 
-Analytics is a flexible time-series charting system for visualizing solar site data at multiple levels: individual channels, entire sites, and fleet-wide portfolios. Users can select from 15+ predefined chart types, customize the date range, filter by channels and metrics, adjust sampling intervals, and export data for reports. All time-series data comes from an external chart service; the backend provides metadata (site/channel/metric definitions).
+Analytics is the platform's **charting workbench** — where you visualize solar production, irradiance, and performance over time. You can chart at three levels: a single data **channel** (one inverter or sensor), a whole **site**, or a **portfolio** of sites. Pick a chart type, set a date range, choose which metrics and channels to include, adjust the sampling interval, and an interactive chart renders.
 
-In plain terms: click the Analytics menu item, pick a site or portfolio, choose a chart type (e.g., "Channel Power", "Site Power Analysis"), adjust the date range and metrics, and a Plotly-based dashboard renders the interactive chart. You can export charts as images or PDFs for reports.
+One thing worth knowing up front: **the platform's own backend doesn't draw these charts.** It only supplies the metadata (which sites, channels, and metrics exist). The actual time-series charts are produced by separate external charting services. From the user's point of view this is invisible — you just get a chart — but it shapes how the feature behaves (and what can break).
+
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what you can chart and how it works. *Developer* adds the three external services, the data feeds, the Dash/Plotly embed mechanics, the component map, the metadata API, file references, and a solar-terminology primer.
+
+---
+
+## Why this matters
+
+A monitoring platform lives or dies on whether people can *see* what their plants are doing. Analytics is that window. It lets an analyst:
+
+- Compare a site's actual production against what it should produce.
+- Drill into a single inverter or sensor channel to find the under-performer.
+- Roll a whole fleet up into one performance table.
+- Pull irradiance, weather, availability, and energy onto the same timeline to explain *why* a number moved.
+
+Because it's flexible, it's also the feature with the most "why is my chart empty?" questions — most of which come down to the rules below (interval vs date range, which metrics are actually available, picking a specific sub-chart).
+
+---
+
+## What you can chart
+
+You choose from a tree of chart types organized by level:
+
+- **Channel charts** — one or more individual channels (e.g. inverter power, sensor irradiance).
+- **Site charts** — whole-site views like power analysis, energy, irradiance, availability.
+- **Portfolio charts** — multiple sites at once, including a fleet KPI table.
+- **Tools** — utility/diagnostic views.
+
+For each you control:
+
+- **Date range** — any window you like, interpreted in the site's local timezone.
+- **Metrics** — what's plotted (kWh, EPI, irradiation, availability, …). The list is filtered to what's actually available for that chart and site.
+- **Channels / zones** — for channel charts, which channels (optionally grouped into "zones" by orientation/array).
+- **Interval** — how finely the data is sampled (raw, 5-minute, hourly, daily, monthly).
+- **Auto-refresh** — keep a "today" chart updating live.
+
+---
+
+## How charting works
+
+The flow is simple from the outside:
+
+1. Open Analytics, pick a site (or several) and a chart type.
+2. Set the date range, metrics, channels, and interval.
+3. The chart renders — interactive, zoomable, exportable.
+
+Behind that simplicity, the chart itself is drawn by an external charting service that reads the platform's stored time-series data directly. The platform passes that service your selections (plus a secure token proving who you are) and embeds the result in the page. You can even turn a spot on a chart into an Event (e.g. flag an anomaly) without leaving the view.
+
+There's also an **embeddable** version of any chart — a standalone URL that renders a single chart, used to drop charts into reports and other pages.
+
+---
+
+## Multi-site & fleet charting
+
+Portfolio chart types let you select **several sites at once**. The external service aggregates across them and shows fleet-level results — so you see the combined picture, not per-site breakdowns (drill into a single site for those). The **Fleet KPI table** is a special portfolio view: it filters sites by their service status, then shows a fixed set of performance KPIs (baseline/actual EPI, availability, insolation) at a daily or monthly cadence.
+
+---
+
+## Who can see analytics
+
+Like the rest of the portal, analytics is scoped to your company — you can only chart sites you're entitled to see (SUPER_ADMINs see all). The main Analytics page requires a company; the standalone embedded-chart URL is the one exception (any signed-in user can load an embed).
 
 ---
 
 ## The rules that matter
 
-**Analytics data comes from an external chart service, not the backend database.** The `VITE_CHART_URL` environment variable points to a dedicated time-series API that handles all data fetching, aggregation, and interval sampling. The NestJS backend only provides metadata (site/channel/metric names and relationships). — `denowatts-portal/src/store/api/chartApi.ts:5-15`
-
-**Chart types are hierarchically organized with channel pattern matching.** Each chart type (e.g., "Channel Power") specifies which channel patterns it supports via regex (e.g., `['3.1.*', '5.2.*']` for power channels). The UI pre-filters available charts based on the selected site's channels. — `denowatts-portal/src/pages/dashboard/analytics/data/analytics-charts.ts:13-150`
-
-**Date ranges are immutable via presets or custom selection.** Users pick from predefined ranges (Today, This Week, This Month, etc.) or select a custom range. Once set, the range is stored in Redux and URL params, allowing bookmarking and navigation. — `denowatts-portal/src/pages/dashboard/analytics/data/range-presets.ts`, `denowatts-portal/src/pages/dashboard/analytics/components/AnalyticsSettings.tsx:30-31`
-
-**Metrics are dynamically fetched from the backend based on chart type and site.** When a chart is selected, the UI calls `GET_METRICS` (GraphQL) to list available metrics, then fetches available metrics from the chart service. Users can select a subset of metrics to display. — `denowatts-portal/src/pages/dashboard/analytics/components/AnalyticsSettings.tsx:126-150`
-
-**Timezone affects date range interpretation and display.** Each site has a timezone (auto-set from coordinates). When a date range is selected, it's interpreted in that site's timezone, not UTC. This ensures "Today" means calendar-day-today in the site's location, not UTC-today. — `denowatts-portal/src/pages/dashboard/analytics/components/AnalyticsSettings.tsx:77-104`
-
-**The control panel state is persisted in Redux and URL params.** Redux stores the current analytics state (`analyticsSettings` slice). When users navigate or refresh, the URL params are read to restore the state. This allows bookmarking a specific chart view. — `denowatts-portal/src/pages/dashboard/analytics/components/AnalyticsSettings.tsx:68`, `denowatts-portal/src/store/slices/headerSlice.ts`
-
-**Charts are rendered via embedded Plotly dashboards (Dash).** The `PlotlyDash` component embeds a Dash application that renders interactive charts. Dash handles interactivity (zooming, hovering, legend toggling) and exports (PNG, SVG, PDF). — `denowatts-portal/src/pages/dashboard/analytics/components/PlotlyDash/PlotlyDash.tsx:46`
+- **Interval limits how long a range you can chart.** Finer sampling = shorter maximum window (raw ≈ 7 days, 5-minute ≈ a month, daily ≈ a year, monthly unbounded). Pick too long a range for the interval and it's auto-trimmed.
+- **A chart only renders once you've picked everything it needs** — e.g. a channel chart needs both channels and metrics; the bare "portfolio" parent does nothing until you pick a specific sub-chart.
+- **Only genuinely available metrics are offered** — the metric list is validated against what the charting service actually has for that site and range, and stale selections are dropped.
+- **Dates are always in the site's local time.**
+- **Auto-refresh only applies when you're viewing today.**
+- **Analytics needs a company** (SUPER_ADMINs excepted); the embedded-chart URL does not.
 
 ---
 
-## Where it lives
+## Entry points & routes {dev}
 
-### Main routes
-
-- **Analytics Dashboard** — `/analytics/:siteId?` (main page)
-  - Entry point for fleet or single-site analytics
-  - URL param `:siteId?` is optional; if omitted, shows portfolio-level analytics
-  - `AnalyticsPage` renders the control panel + Plotly dashboard
-
-- **Embedded Analytics** — `/analytics/embedded` (third-party embedding)
-  - Stripped-down variant for embedding in external tools
-  - `EmbeddedAnalyticsPage` (similar control panel, simpler layout)
-
-### Usage in other pages
-
-- **Energy Accounting** — `/site/:siteId/energy-accounting`
-  - Uses the same `AnalyticsPage` component
-  - Pre-selected to show energy-related charts for that site
-
-### Frontend components
-
-`denowatts-portal/src/pages/dashboard/analytics/components/`:
-
-- **AnalyticsSettings.tsx** (79KB) — Control panel
-  - Site selector (single or multiple)
-  - Chart type tree (hierarchical dropdown)
-  - Date range picker (presets + custom)
-  - Channel multi-select (if chart is channel-level)
-  - Metric multi-select
-  - Interval selector (5m, 1h, 1d, etc.)
-  - Timezone display (read-only, from site)
-  - Auto-refresh toggle with interval options
-  - Print/export buttons
-
-- **PlotlyDash.tsx** — Chart renderer
-  - Embeds a Dash application
-  - Handles token refresh for authenticated requests
-  - Manages event modal (for creating notes/tickets from charts)
-  - Exports screenshots and PDF reports
-
-- **Dashboard.tsx** — Legacy dashboard (may be deprecated)
-
-- **MultiSelectDropdown/** — Custom multi-select UI for channels/metrics
-
-- **FaultDescriptions/** — Modal with fault code reference
+Sidebar "Analytics" → route `/analytics/:siteId?` (`denowatts-portal/src/router.tsx:260`); also reused inside Site → Energy Accounting tab (`:212`). Stand-alone embed at `/analytics/embedded` (`:617`). The main route is wrapped in `CompanyRequiredRoute` (SuperAdmin bypass); the embedded route is **not** company-gated.
 
 ---
 
-## Who can open what
+## Chart service architecture {dev}
 
-### Frontend guards
+**Three distinct external services**, all authenticated with the portal JWT (`auth.accessToken`), none part of the NestJS backend:
 
-- **`CompanyRequiredRoute`** wraps `/analytics/:siteId?` — you must have a company assigned. SuperAdmins bypass this check. — `denowatts-portal/src/router.tsx:260-261`
-- **`/analytics/embedded`** is open to all authenticated users (no company required).
+| Service | Env var | Used by | Mechanism |
+|---|---|---|---|
+| Chart data (legacy) | `VITE_CHART_URL` | `chartApi` RTK Query — POST returns Highcharts dashboard JSON | `store/api/chartApi.ts:7,13,38` |
+| Plotly/Dash app (current default) | `VITE_PLOTLY_URL` | `DashApp` from `dash-embedded-component` — renders the full interactive dashboard in-page | `analytics/components/PlotlyDash/PlotlyDash.tsx:255` |
+| Zone/metric matrix | `VITE_MATRIX_URL` | `zoneApi` POST `/data/zones` — channel→zone tree + per-zone metrics | `store/api/zoneApi.ts:19,24` |
 
-### Backend role control
+### Rendering: two paths gated by `enableBetaCharts` {dev}
+`AnalyticsPage` picks the engine on `analyticsSettings.enableBetaCharts` (defaults **`true`** — Plotly is live) — `headerSlice.ts:221`, `AnalyticsPage.tsx:148`:
+- **`true` → `<PlotlyDash />`** — embeds a Dash app via `DashApp` (`PlotlyDash.tsx:253-260`); Dash fetches the data, the portal does **not** (RTK `getChart` skipped, `AnalyticsPage.tsx:70`).
+- **`false` → `<Dashboard config={template(chartData)} />`** — legacy Highcharts: `useGetChartQuery` against `VITE_CHART_URL`, mapped through per-chart templates (`AnalyticsPage.tsx:51-76,94-142`).
 
-- **`GET_SITES`** — All authenticated users can query sites within their company. SuperAdmins can query any company's sites. — `denowatts-backend/src/sites/resolvers/sites.resolver.ts`
-- **`GET_CHANNELS`** — Company-scoped. Non-SuperAdmins see only channels in their company's sites. — `denowatts-backend/src/channels/resolvers/channels.resolver.ts`
-- **`GET_METRICS`** — Open to all authenticated users. Metrics are company-agnostic (global definitions). — `denowatts-backend/src/metrics/resolvers/metrics.resolver.ts`
-- **Chart service** (`VITE_CHART_URL`) — No role checking (assumed already authenticated via JWT passed in request headers).
+### Dash embed (`VITE_PLOTLY_URL`) {dev}
+`PlotlyDash` mounts `<DashApp>` with `config = { url_base_pathname: VITE_PLOTLY_URL, auth_token: accessToken, request_refresh_jwt }` and `value = { params: { site, startDate, endDate, channels, metrics, interval, refresh, timezone, print, kpis?, zonesWithMetrics? }, meta: { chart, theme } }` (`:253-260`). `auth_token` is the live JWT; on expiry Dash calls `request_refresh_jwt` → `REFRESH_TOKEN` mutation → `refreshTokens`, else `logout()` (`:29-44`). `value` is memoized; arrays serialized in the dep list (`:85-121`). Dates re-interpreted in site tz: `dayjs.tz(startDate, timezoneToUse).toISOString()` (default `America/New_York`) (`:77-81`). Dash → portal via `window.postMessage` `{ type: 'DASH_EVENT', action: 'create_event' }` opens the Create-Event modal pre-filled from the chart (`:181-234`).
 
----
-
-## How it works {dev}
-
-### Loading Analytics
-
-1. User navigates to `/analytics` or `/analytics/{siteId}`. The route is protected by `CompanyRequiredRoute` — user must have a company assigned. — `denowatts-portal/src/router.tsx:260-261`
-2. `AnalyticsPage` loads. It reads `analyticsSettings` from Redux. If this is the first load (or state was cleared), defaults are applied. — `denowatts-portal/src/pages/dashboard/analytics/AnalyticsPage.tsx:26-40`
-3. The control panel (`AnalyticsSettings`) renders. It fires three parallel GraphQL queries:
-   - `GET_SITES` — all sites in the company
-   - `GET_CHANNELS` — channels for the selected site (if chart is channel-level)
-   - `GET_METRICS` — available metric definitions
-   — `denowatts-portal/src/pages/dashboard/analytics/components/AnalyticsSettings.tsx:112-130`
-4. The user picks a site (or keeps the default), chart type, date range, channels, and metrics. — `denowatts-portal/src/pages/dashboard/analytics/components/AnalyticsSettings.tsx:150-350`
-5. When the form changes, `updateAnalyticsSettings` is dispatched to Redux and the URL params are updated. — `denowatts-portal/src/pages/dashboard/analytics/components/AnalyticsSettings.tsx:400-450`
-
-### Fetching and rendering a chart
-
-1. Once the user has selected a valid chart (and all required fields are filled), `AnalyticsPage` fires a request to the chart service. — `denowatts-portal/src/pages/dashboard/analytics/AnalyticsPage.tsx:51-76`
-2. The request payload includes:
-   - `type` — chart type (e.g., 'site', 'channel', 'channelPower')
-   - `site` — site ID or comma-separated IDs (for multi-site charts)
-   - `start` — start date (ISO 8601, in site timezone)
-   - `end` — end date (ISO 8601, in site timezone)
-   - `channels` — comma-separated channel IDs (for channel-level charts)
-   - `metrics` — array of metric names
-   - `interval` — sampling interval (e.g., '5m', '1h', '1d')
-   — `denowatts-portal/src/store/api/chartApi.ts:26-51`
-3. The chart service processes the request and returns a Plotly dashboard specification (JSON). — (chart service implementation not documented here; assumed external)
-4. `PlotlyDash` receives the dashboard spec and renders it using the Dash embedded component. — `denowatts-portal/src/pages/dashboard/analytics/components/PlotlyDash/PlotlyDash.tsx:46-100`
-5. The Plotly dashboard is interactive: users can zoom, pan, toggle series, and hover for details. — (Plotly/Dash interactivity is handled by the embedded component)
-
-### Using chart presets and templates
-
-1. Each chart type has a predefined Plotly template (e.g., `channelPowerTemplate`, `sitePowerAnalysisTemplate`). — `denowatts-portal/src/pages/dashboard/analytics/data/templates/`
-2. The chart service uses the appropriate template based on the `type` parameter. — `denowatts-portal/src/pages/dashboard/analytics/AnalyticsPage.tsx:92-130`
-3. The template defines:
-   - Chart layout (title, axes, legend position, etc.)
-   - Trace configuration (line width, color, type)
-   - Default interactions (hover, zoom behavior)
-   — (template details not fully documented here; see template files)
-
-### Exporting data
-
-1. Plotly/Dash provides built-in export buttons: "Download plot as PNG", "Download plot as SVG", "Download plot as PDF". — `denowatts-portal/src/pages/dashboard/analytics/components/PlotlyDash/PlotlyDash.tsx`
-2. Clicking one of these buttons downloads the chart as an image or PDF file. — (Dash handles this natively)
-3. For report generation, users can also create an event (note or ticket) from a chart, which captures a screenshot. — `denowatts-portal/src/pages/dashboard/analytics/components/PlotlyDash/PlotlyDash.tsx:52-58`
-
-### Multi-site charting
-
-1. Some charts (e.g., `portfolioTreechart`, `portfolioEnergy`) support multiple sites. The site selector in `AnalyticsSettings` switches to multi-select mode for these chart types. — `denowatts-portal/src/pages/dashboard/analytics/components/AnalyticsSettings.tsx:76-81`
-2. When multiple sites are selected, the chart service receives a comma-separated list of site IDs. — `denowatts-portal/src/pages/dashboard/analytics/AnalyticsPage.tsx:58`
-3. The chart aggregates data across sites (specifics depend on the chart type and service implementation).
+### Embedded variant (`/analytics/embedded`) {dev}
+`EmbeddedAnalyticsPage` → `PlotlyEmbeddedDash`: reads params from the **URL query string** via `prepareDashData` (`:36-100,107`); looks up site tz via `GET_SITE` (`:109-127`); `url_base_pathname` = `VITE_PLOTLY_URL` with `my-analytics`→`embedding` (`:141-144`). A third embed (Tests reports) lives at `tests/components/PlotlyDashReport/PlotlyDashReport.tsx:176` — see [[tests]].
 
 ---
 
-## Data it touches {dev}
+## Data feeds {dev}
 
-### GraphQL queries (metadata only)
+The portal never reads the rollup collections directly; the external services do. See [[data-out]] for storage.
 
-- **`GET_SITES`** — `denowatts-backend/src/sites/resolvers/sites.resolver.ts`
-  - Returns all sites in the user's company
-  - Supplies site IDs for the site selector
+### Legacy Highcharts feed — `VITE_CHART_URL` {dev}
+`chartApi.getChart` POSTs `{ type, site, start, end, channels, metrics: [metrics], interval, print }` and receives a dashboard spec (`chartApi.ts:26-53`). `type` = chart value (`sitePowerAnalysis`, `channelPower`, …); `site` = single id or comma-joined; `start`/`end` = `startOf('day')`/`endOf('day')`. **GOTCHA:** wraps the already-array `metrics` in another array (`metrics: [metrics]`, `chartApi.ts:46`) — UNCLEAR if intentional; legacy path only. Result → per-chart template under `analytics/data/templates/`.
 
-- **`GET_CHANNELS`** — `denowatts-backend/src/channels/resolvers/channels.resolver.ts`
-  - Returns channels for a specified site
-  - Supplies channel IDs and names for channel-level charts
+### Available-metrics feed — `VITE_CHART_URL/metrics` {dev}
+`chartApi.getAvailableMetrics` POSTs `{ type, site, start, end, channels, interval }` → `{ metrics: string[] }` (`chartApi.ts:10-25`). `type` collapses to `'site'` for site/portfolioTable else `'channel'`; skipped for `tools*` and channel charts with no channels (`AnalyticsSettings.tsx:147-159`). Result intersected with GraphQL metrics; stale selections pruned (`:207-218,417-418`).
 
-- **`GET_METRICS`** — `denowatts-backend/src/metrics/resolvers/metrics.resolver.ts`
-  - Returns all custom metric definitions
-  - Supplies metric names and descriptions for the metric selector
+### Zone feed — `VITE_MATRIX_URL/data/zones` {dev}
+`zoneApi.getZones` POSTs `{ site, channels, start, end, interval }` → `{ metrics, zones: Record<zoneKey, metricNames[]> }` (`zoneApi.ts:24-37`). Only when site + ≥1 channel + dates + interval are set (`useZone.ts:33-34`). Zone keys (`zone.1`, `zone.1.1`, …) natural-sorted into a 3-level tree (`:46-70`); selected zones' union of metrics → `zonesWithMetrics` → Plotly (`AnalyticsSettings.tsx:184-220`).
 
-### External chart service (time-series data)
+### KPI feed (portfolio table) {dev}
+`portfolioTable` uses a fixed KPI set `['rBepi','rEpi','rEpiInService','rAvailabilityEnergy','rAvailabilityEquipment','rBaselineInsolation']` (`data/kpis.ts:1-8`); added to Plotly `params.kpis` when present (`PlotlyDash.tsx:97`).
 
-- **`POST VITE_CHART_URL`** — Time-series data fetching
-  - Request: `{ type, site, start, end, channels, metrics, interval, print }`
-  - Response: Plotly dashboard spec (JSON)
-  - Auth: JWT in Authorization header
+### Underlying storage (served by external services) {dev}
+Per [[data-out]]: `channelrollup`, `siterollup`, `sitedailyrollup` (`nrgProducedPred` noted "used by Plotly fleet summary"). Fleet-table data overlaps the report fleet-summary pipeline ([[report]] `POST /api/report/fleet/summary`). UNCLEAR whether the chart services proxy that endpoint or compute independently — both external from the portal's view.
 
-- **`POST VITE_CHART_URL/metrics`** — Available metrics for a chart type/site
-  - Request: `{ type, site, start, end, channels, interval }`
-  - Response: `{ metrics: ['metric1', 'metric2', ...] }`
+---
 
-### Redux state
+## Frontend components {dev}
 
-- **`state.header.analyticsSettings`** — Current analytics control panel state
-  - Fields: `site`, `chart`, `startDate`, `endDate`, `channels`, `metrics`, `interval`, `timezone`, `autoRefresh`, `enableBetaCharts`, `kpis`, etc.
-  - Updated via `updateAnalyticsSettings(payload)` and `updateRefreshValue(value)` actions
+- **AnalyticsPage** (`analytics/AnalyticsPage.tsx`) — picks PlotlyDash vs Dashboard (`:144-160`); pre-fetches `GET_CHANNELS` for channel charts (`:42-49`); legacy `useGetChartQuery` with conditional polling (`:51-76`); render gate via `shouldRenderChart` (`:147`, `utils/index.ts:30-58`).
+- **AnalyticsSettings** (`components/AnalyticsSettings.tsx`, ≈2,359 lines) — the control panel: site/chart-type/date/channel/zone/metric/interval selectors, auto-refresh, print, fault modal. Fires `GET_SITES`/`GET_CHANNELS`/`GET_METRICS`, `useGetAvailableMetricsQuery`, `useZone`; persists to Redux + URL. Chart catalog with `channelPatterns` regex in `data/analytics-charts.ts:13-206`.
+- **PlotlyDash** / **PlotlyEmbeddedDash** — the Dash embeds (above).
+- **Dashboard** (legacy Highcharts) — used only when `enableBetaCharts === false`; chart components under `components/Dashboard/components/charts/`.
+- **Supporting** — `MultiSelectDropdown/`, `FaultDescriptions/`, `utils/searchParams.ts`, `utils/zonePatternParser.ts`, `hooks/useZone.ts`, `data/templates/*.ts`.
 
-### URL parameters (localStorage/searchParams)
+---
 
-- Chart state is persisted as URL search params: `?site=...&chart=...&start=...&end=...&channels=...&metrics=...&interval=...`
-- This allows bookmarking and sharing specific chart views
+## GraphQL / data API surface {dev}
+
+The NestJS backend serves **only metadata** — there is **no backend analytics resolver or chart-data endpoint** (`find … -path "*analytics*"` returns only the unrelated Lattigo type).
+
+| Operation | Input | Output | Resolver |
+|---|---|---|---|
+| `metrics` (`GET_METRICS`) | `GetMetricsInput` (default `{}`) | `[Metric]` (`name`, `displayName`, `unit`, `tags`, `channelPrefixes`, `zone`, `isKpi`, …) | `metrics.resolver.ts`; see [[metrics]] |
+| `sites` (`GET_SITES`) | none | site list incl. `timezone` | company-scoped; see [[site]] |
+| `site(id)` (`GET_SITE`) | `id` | single site incl. `timezone` | used by the embedded page to localize dates |
+| `channels(filter)` (`GET_CHANNELS`) | `{ sites: [...] }` | channel list | company-scoped; see [[channels]] |
+| `REFRESH_TOKEN` | refresh token | new access token | Dash `request_refresh_jwt` + RTK reauth — `PlotlyDash.tsx:29-44`, `baseApi.ts:59-71` |
+
+GraphQL metric definitions also drive per-company display-name translation (`companyWiseName`) — see [[metrics]].
+
+---
+
+## Multi-site charting (detailed) {dev}
+
+Multi-site is enabled for `portfolio*` charts: the site selector becomes multi-select and `site` is a **string array** in Redux; other charts collapse it to a single string (`AnalyticsSettings.tsx:761-861`). URL handling mirrors this (`:1464-1474`). Legacy request joins sites with commas (`AnalyticsPage.tsx:58`); Plotly passes the array in `params.site` (`PlotlyDash.tsx:90,115`). `portfolioTable` filters sites by service status first (no status → no sites), uses the fixed KPI set, default interval `1d`, 7-day default range (`AnalyticsSettings.tsx:670-673,1403-1413`). The external service aggregates; per-site breakdown isn't shown in aggregated charts.
+
+---
+
+## Business rules (cited) {dev}
+
+- **No company → no analytics** — `/analytics/:siteId?` in `CompanyRequiredRoute` (SuperAdmin bypass), `router.tsx:260-261`; `/analytics/embedded` not company-gated (`:617`).
+- **Defaults:** chart `sitePowerAnalysis`, range last 7 days (ending yesterday), interval `5m`, beta ON — `headerSlice.ts:203-226`.
+- **Render guard per family** — `utils/index.ts:30-58`: `channel` needs channels+metrics; `channel*` needs channels; `site` needs metrics; bare `portfolio` never renders.
+- **Interval → max date span** — `AnalyticsSettings.tsx:465-482`: raw 7d, 5m 31d, 1h 31d, 15m 180d, 1d 365d, 1mo unbounded; over-long ranges auto-clamped (`:566-575`).
+- **Default span by family+interval** — `:487-509`. **Interval options by family** — `:514-558` (channel {raw,5m,1h}; site {5m,15m,1h,1d}; portfolio {1d,1mo}).
+- **Metrics server-validated** — intersection of `GET_METRICS` and the chart service `/metrics`; stale pruned (`:132-218`).
+- **Channel availability filtered client-side by regex** from `analytics-charts.ts` `channelPatterns` via `testPattern` (`:22-55`, `utils/index.ts:14-26`).
+- **Auto-refresh only when viewing today** — `AnalyticsPage.tsx:71-74`; Plotly `setInterval` (`PlotlyDash.tsx:123-137`).
+- **Dates tz-localized to site, stored UTC ISO** — `PlotlyDash.tsx:77-81` (fallback `America/New_York`).
+- **External-service auth** — all three get the JWT; 401 → refresh or logout (`baseApi.ts:51-71`, `PlotlyDash.tsx:29-44`).
 
 ---
 
 ## Edge cases & gotchas {dev}
 
-- **Channel pattern matching is done client-side, not server-side.** When a site is selected, the available chart types are filtered by comparing the site's channels against each chart's `channelPatterns` regex. If no channels match, certain chart types are grayed out. This filtering is optimistic (assumes channel patterns are accurate). — `denowatts-portal/src/pages/dashboard/analytics/components/AnalyticsSettings.tsx:200-250`
-
-- **The chart service may return different data for the same request at different times.** Time-series data is finalized over time. A request for "today" may return different results at 9am vs. 11am as the system continues to aggregate data. This is expected behavior. — (not explicitly handled; users should be aware)
-
-- **Date range is interpreted in site timezone, but stored in UTC in Redux.** The UI displays dates in the site's timezone, but internally stores them as UTC ISO strings. This can cause confusion if the user's browser timezone differs from the site's. — `denowatts-portal/src/pages/dashboard/analytics/components/AnalyticsSettings.tsx:77-80`
-
-- **Metrics are not validated against the chart type.** If a user selects a metric that doesn't apply to the chosen chart (e.g., selecting "inverter efficiency" for a "channel power" chart), the chart service may return an error or an empty chart. The UI doesn't pre-validate. — `denowatts-portal/src/pages/dashboard/analytics/components/AnalyticsSettings.tsx:132-150`
-
-- **The external chart service is a single point of failure.** If `VITE_CHART_URL` is unavailable or slow, all analytics pages hang or error. There's no fallback or caching. — `denowatts-portal/src/store/api/chartApi.ts:7`
-
-- **Auto-refresh only works for recent dates.** Auto-refresh is only enabled if the `endDate` equals today. This prevents the page from polling old data repeatedly. — `denowatts-portal/src/pages/dashboard/analytics/AnalyticsPage.tsx:71-74`
-
-- **Multi-site charts do not show per-site metrics separately.** When viewing a portfolio chart with multiple sites, individual site metric values are not displayed (only aggregated fleet values). To see a metric for one site, you must select that single site. — `denowatts-portal/src/pages/dashboard/analytics/AnalyticsPage.tsx:58`
-
-- **The Dash embedded component requires authentication.** PlotlyDash passes the JWT access token to Dash in headers. If the token expires, Dash refreshes it server-side. If refresh fails, the user is logged out. — `denowatts-portal/src/pages/dashboard/analytics/components/PlotlyDash/PlotlyDash.tsx:29-44`
-
-- **Print/export buttons in Plotly use the browser's print dialog, not a custom exporter.** Exported PDFs are rendered from the Plotly canvas and may have layout issues or missing interactivity. — (Plotly/Dash native behavior)
+- **`metrics: [metrics]` double-nesting** in legacy `getChart` — `chartApi.ts:46`. UNCLEAR; legacy path only.
+- **Two render engines, one defaulting on** — `enableBetaCharts` defaults `true`, so the legacy path + templates are dormant unless beta is turned off — `headerSlice.ts:221`, `AnalyticsPage.tsx:70,148`.
+- **Three single points of failure** — `VITE_CHART_URL`/`VITE_PLOTLY_URL`/`VITE_MATRIX_URL` are independent externals with no in-portal cache/fallback; legacy shows "Something went wrong!" on error (`AnalyticsPage.tsx:88-90`).
+- **Embedded base path is a string substitution** — `my-analytics`→`embedding` assumes that substring exists in `VITE_PLOTLY_URL` (`PlotlyEmbeddedDash.tsx:141-144`).
+- **"Today" data is non-deterministic** — rollups finalize over time (handled by the external services).
+- **Metrics not validated against chart semantics** — availability only; an available-but-irrelevant metric can yield an odd chart.
+- **Portfolio aggregation hides per-site values** — pick a single site for those.
+- **State lives in Redux + URL** (main page) vs URL-only (embedded); URL parsing supports comma-separated and legacy repeated params (`utils/searchParams.ts`).
+- **Token expiry → forced logout** if `REFRESH_TOKEN` fails (`PlotlyDash.tsx:41-43`, `baseApi.ts:69`).
 
 ---
 
-**Related flows:** [[site]] (analytics embedded in site energy-accounting tab), [[portfolio]] (portfolio analytics sub-pages), [[settings]] (admin customization of metrics)
+## Solar & platform terminology {dev}
+
+- **Channel** — one measured data stream from the site (an inverter's output, a sensor reading). The finest charting level. See [[channels]].
+- **Zone** — a group of channels sharing orientation/array, used to chart by physical grouping rather than individual channel.
+- **Metric** — a named measured quantity (kWh, AC power, POA irradiance, EPI, availability). See [[metrics]].
+- **Irradiance vs irradiation** — instantaneous sunlight power (W/m²) vs energy accumulated over time (kWh/m²).
+- **POA** — Plane-Of-Array: irradiance measured in the plane the panels actually face (the meaningful one for performance).
+- **EPI / BEPI** — Energy Performance Index (actual ÷ expected) and its baseline variant; central KPIs in the fleet table.
+- **Availability** — the share of time equipment (or energy capacity) was up and producing.
+- **Interval / resolution** — how finely time-series is sampled (raw, 5-minute, hourly, daily, monthly); trades detail for range.
+- **Rollup** — pre-aggregated time-series (per channel, per site, daily) that the charting services read instead of raw points. See [[data-out]].
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[data-out]] · [[report]] · [[metrics]] · [[site]] · [[portfolio]] · [[channels]] · [[tests]] · [[solar-glossary]]
