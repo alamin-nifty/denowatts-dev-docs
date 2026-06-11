@@ -286,7 +286,7 @@ Route tree under `/site/:siteId?` (`router.tsx:127-225`), wrapped by `CompanyReq
 
 ## Edge cases & gotchas {dev}
 
-- **`update` un-archives events on every save** — `restoreArchivedSiteEvents` runs whenever `deletedAt === null` (true for all live sites), not just on un-delete — `sites.service.ts:426-428`.
+- **`update` calls `restoreArchivedSiteEvents` on every live-site save** (`deletedAt === null`, true for all live sites) — `sites.service.ts:426-428`. **Verified harmless:** the only writer of `archivedAt` in the backend is site soft-deletion (`archiveSiteEvents`), so on a live site the restore matches zero events and is a no-op; it only takes effect on site un-delete, which is the intended behavior. Optional hardening: gate it on the actual deleted→live transition.
 - **`getSitesAccessCompanies` likely doesn't expand cross-company access** — `findByIds([company])` queries `sites._id IN [companyId]`, which essentially never matches; result is almost always just `[company]` — `:787-802`. Flag for review.
 - **Capacity-test parse is destructive** — `deleteMany`s the site's `sitepredicted` rows before re-inserting; a parse error aborts before the delete — `:681-686`.
 - **OpenAI energy-model extraction degrades silently** — any failure returns a 12-row `{Month}` skeleton, no values — `openai.service.ts:276-292`.

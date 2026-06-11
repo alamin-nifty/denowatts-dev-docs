@@ -1,90 +1,99 @@
-# Code-review findings — compiled from the documentation passes
+# Code-review findings — compiled and verified
 
 Everything the documentation effort flagged "for human review", in one prioritized checklist.
-Each item cites the code location and the flow doc that explains it in context.
-Documentation-only artifact — nothing here has been changed in the code.
+**P1 and P2 have now been adversarially verified against the source code** (read-only, 2026-06-11):
+each item carries a verdict — ✅ CONFIRMED · ⚠️ PARTIAL · ❌ REFUTED — with evidence. Four new
+findings discovered during verification are listed in P0/P1. P3–P6 are documentation-pass
+observations, not yet independently re-verified.
 
-> Compiled 2026-06-11 from all 27 flow docs. Priorities: **P1** security, **P2** likely bugs,
-> **P3** placeholders/incomplete features, **P4** dead code & cleanup, **P5** performance/indexes,
-> **P6** architecture questions to confirm.
+> Priorities: **P1** security, **P2** likely bugs, **P3** placeholders/incomplete features,
+> **P4** dead code & cleanup, **P5** performance/indexes, **P6** architecture questions.
+> Nothing here has been changed in the code — this is a review queue.
 
 ---
 
-## P1 — Security
+## ⚡ New findings discovered during verification
 
-- [ ] **No refresh-token rotation or server-side revocation.** Refresh tokens are stateless 7-day JWTs; logout only clears `localStorage`; a leaked token stays valid for its full life. `refreshToken()` also doesn't re-check user status, so a soft-deleted user can keep minting access tokens briefly. — `auth.service.ts:285-309` · doc: [authentication](authentication.md)
-- [ ] **Sign-up leaks account existence** ("Email already exists") while forgot-password is carefully anti-enumeration. Inconsistent. — `auth.service.ts:66` · doc: [authentication](authentication.md)
-- [ ] **`channelRaw` / `channelDataCount` GraphQL queries have no role guards** — any authenticated user can query any site's raw data by ObjectId; and the `internal: true` flag bypasses all date-range limits with no secondary check. — `device-data.resolver.ts:14-22`, `device-data.service.ts` · doc: [data-out](data-out.md)
-- [ ] **`moveDenoboxFile` silently sets `ACL: 'public-read'`** on the destination copy — moving a private file makes it public. — `storage.service.ts:459` · doc: [storage](storage.md)
-- [ ] **No `folder` parameter sanitization on Denobox uploads** — path-traversal strings (`../../`) pass straight into S3 keys. — `storage.service.ts:120-121` · doc: [storage](storage.md)
-- [ ] **TLS verification disabled** on the capacity-test POST to the Matrix Python service (`rejectUnauthorized: false`). — `sites.service.ts:740-743` · docs: [tests](tests.md), [site](site.md)
-- [ ] **`channelFaults` has no role guard** and triggers one paid OpenAI call per fault code — a cost/abuse vector for any authenticated user. — `channels.resolver.ts:64`, `channels.service.ts:1106` · docs: [tests](tests.md), [channels](channels.md)
-- [ ] **No server-side ownership check on `updateEvent` / `removeEvent`** — any signed-in user who knows an event id can modify or delete it. — `events.service.ts` · doc: [events](events.md)
-- [ ] **`updatePrompt` has no ownership check** — any authenticated user can edit any prompt by `_id`. — `prompts.service.ts` · doc: [prompts](prompts.md)
-- [ ] **Status-logs REST endpoints are fully public** (`@Public()`, no role guard) and `/status-logs/template` spreads the raw settings doc, leaking any extra stored fields. — `status-logs` controller · doc: [status-logs](status-logs.md)
-- [ ] **`/metrics` and `/device-types` routes render outside the guarded app shell**, and the `deviceTypes` GraphQL query is `@Public()` (no token needed) while the page sits behind sign-in — confirm intentional. — `router.tsx:605-615` · docs: [settings](settings.md), [device-types](device-types.md)
-- [ ] **Field-setup routes carry no `ProtectedRoute`/`CompanyRequiredRoute`** — only in-component guest gating + backend company scoping. Confirm intentional. — `router.tsx:293-348` · doc: [field-setup](field-setup.md)
+- [ ] ✅ **`updateMetric` has no `@Roles` guard** — unlike `createMetric` (SuperAdmin), any authenticated user of any company can mutate the **global** metric definitions. — `metrics.resolver.ts:43-47` vs `:59-75` · **High**
+- [ ] ✅ **`updateChannel` / `removeChannel` / `channel` are fully unscoped** — no `@Roles`, no caller-company check anywhere in `ChannelsService.update/remove/findOne`; any authenticated user (even company-less) can read and rewrite **any channel's configuration** (gateway/Deno/Modbus settings on live installations) by id or serial, including presigned image URLs on read. — `channels.resolver.ts:35-50`, `channels.service.ts:704-829` · **High**
+- [ ] ✅ **`channels.findAll` doesn't scope company users to their company** — it blocks company-less users, but for users *with* a company the query is built purely from the client-supplied filter, so any company user can list any site's channels. — `channels.service.ts:263-289` · **Medium-High**
+- [ ] ✅ **`prompts` list query is unscoped** — any authenticated user can page through every user's prompt history (with creator name/email populated) by omitting the `createdBy` filter. — `prompts.resolver.ts:27-36`, `prompts.service.ts:50-78` · **Medium**
 
-## P2 — Likely bugs
+## P1 — Security (verified)
 
-- [ ] **`getSitesAccessCompanies` queries sites by a company id** (`findByIds([company])` → `sites._id IN [companyId]`), which essentially never matches — cross-company access expansion for the site dropdown almost certainly doesn't work as intended. — `sites.service.ts:787-802` · doc: [site](site.md)
-- [ ] **`SitesService.update` un-archives the site's events on every save** — `restoreArchivedSiteEvents` runs whenever `deletedAt === null`, true for all live sites, not just on un-delete. — `sites.service.ts:426-428` · doc: [site](site.md)
-- [ ] **Capacity-test wizard manual inputs may never render** — radios set enum values but the conditional render compares the string `'MANUAL'`; if the generated enum's runtime value is lowercase, manual TRC/filter fields never appear. — `CapacityTestStep2.tsx:229,288` · doc: [tests](tests.md)
-- [ ] **Non-SuperAdmin notification-settings edits silently don't persist** — `CompaniesService.update` strips non-admin payloads to `{ siteTags }`, but the Notification Management page (reachable by any company user) submits `{ _id, notificationSettings }` through that same mutation. — `companies.service.ts:78-82` · docs: [companies](companies.md), [notification](notification.md)
-- [ ] **`getPortfolioStatusSummary` doesn't exclude soft-deleted sites** (no `deletedAt: null` match, unlike `find`) — possible count discrepancy between the map/list and the rollup. — `sites.service.ts:883` vs `:146-148` · doc: [portfolio](portfolio.md)
-- [ ] **`SiteDailyRollup` schema declares `timestamp` but the query filters on `date`** — separate fields or a bug. — `device-data.service.ts:93` · doc: [data-out](data-out.md)
-- [ ] **Legacy chart request double-nests metrics** (`metrics: [metrics]` wraps an already-array). Dormant path (beta charts default on), but verify before ever re-enabling. — `chartApi.ts:46` · doc: [analytics](analytics.md)
-- [ ] **`formatServiceStatus` returns `""` for COMMISSIONING** — commissioning sites sync a blank status to HubSpot. — `sites.service.ts:768-785` · doc: [site](site.md)
-- [ ] **`ChannelsService.create` has no `GATEWAY` config case** — gateway channels are created config-less and must be patched via update; confirm intended. — `channels.service.ts:181` · doc: [channels](channels.md)
-- [ ] **Race condition on channel `number` auto-increment** — `MAX(number)+1` is not atomic; concurrent creates collide on the unique index with no retry. — `channels.service.ts:215` · doc: [channels](channels.md)
-- [ ] **`Metric.minRange`/`maxRange` are not persisted** — GraphQL fields with no `@Prop`; the admin UI sends them, Mongoose drops them. — `metrics` schema · doc: [metrics](metrics.md)
-- [ ] **`createUser`/`updateUser` accept a `password` field but never hash it** — only the auth flow's `updatePassword` hashes; the open field on these inputs is a latent footgun. — `users.service.ts` · doc: [users](users.md)
-- [ ] **`NotificationService.createMany` is fire-and-forget** — `insertMany` un-awaited with no error handling; bulk insert failures are silently swallowed. — `notification.service.ts` · doc: [notification](notification.md)
-- [ ] **`PromptsService.create` returns `doc.save()` un-awaited inside its try/catch** — async persistence rejections bypass the method's Sentry/logging. — `prompts.service.ts:23` · doc: [prompts](prompts.md)
-- [ ] **`User.lastName` nullability mismatch** — GraphQL non-nullable but Mongo not required; a doc without it throws on serialization (frontend works around with `|| ''`). — `user.schema.ts` · doc: [users](users.md)
+- [ ] ⚠️ **Refresh tokens: no rotation, no server-side revocation.** CONFIRMED: stateless 7-day JWTs, same token returned on refresh (`auth.service.ts:308`), no store/blacklist anywhere, logout only clears `localStorage`. REFUTED in part: although `refreshToken()` itself skips the status check (`:294`), an access token minted for a DELETED user is **inert** — `JwtStrategy → validateUser` rejects DELETED on every protected request (`:320-323`). **Medium.** Fix: token store or per-user token-version claim; add status filter in `refreshToken()` for depth.
+- [ ] ✅ **Sign-up leaks account existence** ("Email already exists", `auth.service.ts:66`) while forgot-password is anti-enumeration (`:336-338`); login additionally distinguishes deleted/pending accounts. **Low-Medium.** Fix: generic signup response + "you already have an account" email.
+- [ ] ✅ **`channelRaw`/`channelDataCount` GraphQL queries have no guards and no company scoping** — bare resolver (`device-data.resolver.ts:10-22`); `site` is even optional, fanning out across **all** sites when omitted (`device-data.service.ts:201-203`). Precision: the `internal: true` date-cap bypass lives on the REST path, which **is** ApiGuard-protected (`api.guard.ts:28-56`) — the GraphQL path has no date cap *or* scoping at all; also no result limit (`paginateQuery`'s 1000-cap is REST-only). **High.** Fix: roles + site-access scoping on both resolvers; make `site` required.
+- [ ] ⚠️ **Storage: ACL + path traversal.** CONFIRMED (A): `moveDenoboxFile` copies with `ACL: 'public-read'` (`storage.service.ts:454-461`) while denobox uploads set no ACL — moving a private file makes it public. LOW-IMPACT (B): `folder`/paths are unsanitized but S3 keys are flat strings and `site` is `@IsMongoId()`-constrained, so `../` creates junk keys rather than reaching another tenant's real prefix. **Medium / Low.** Fix: drop the ACL on move; reject `..`/`/`-prefixed segments.
+- [ ] ✅ **TLS verification disabled** on the capacity-test POST (`rejectUnauthorized: false`, `sites.service.ts:740-744`) — the only such occurrence in the backend (the faults call validates normally). **Medium.** Fix: trusted cert or CA pinning on the Python host.
+- [ ] ✅ **`channelFaults`: no role guard, no site-access check, uncapped OpenAI fan-out** — loads any site by raw id (`channels.service.ts:1114-1120`) and fires one gpt-4.1 completion per fault code with no cache or cap (`:1154-1165`; `openai.service.ts:307`). **High** (denial-of-wallet + cross-tenant). Fix: roles + site-access check, cache by inverter+metric+code, cap codes per request.
+- [ ] ✅ **No ownership check on event update/delete** — `removeEvent` doesn't even receive the user (`events.resolver.ts:54-57`); `update` uses the user only for email copy (`events.service.ts:512-587,662`); read path *is* company-scoped (`:421-430`), proving the omission. Cross-tenant IDOR with guessable ids from notification links. **High.** Fix: mirror the read-path scoping in update/remove.
+- [ ] ✅ **No ownership check on prompt update** — `updatePrompt` takes no current user (`prompts.resolver.ts:22-25`); `createdBy` never re-checked (`prompts.service.ts:31-36`). **Medium-High.** Fix: `findOneAndUpdate({ _id, createdBy: user._id })`.
+- [ ] ✅ **Status-logs REST fully public; `/template` spreads a `strict: false` doc** — class-level `@Public()` (`status-logs.controller.ts:7-8`); the settings schema is an empty class with `strict: false` (`settings.schema.ts:4-8`), so the spread leaks any field ever written to the SYSTEM_STATUS doc (today benign). **Low-Medium**, latent. Fix: whitelist the response fields; confirm public-by-design.
+- [ ] ✅ **Metrics & Device Types fully public, end-to-end** — both routes are top-level siblings of `<App>` (`router.tsx:561,605-615`; no auth redirect applies), and the backend `deviceTypes` *and* `metrics`/`metricsWithPaginate` queries are all `@Public()` (`device-types.resolver.ts:6-14`, `metrics.resolver.ts:23-35`) — anonymous access to the catalogs. **Medium** (reference data, but see the new `updateMetric` finding above). Fix: move routes inside the shell; drop `@Public()` unless an external consumer needs it.
+- [ ] ⚠️ **Field-setup guards.** Frontend PARTIAL: routes lack `ProtectedRoute`/`CompanyRequiredRoute` but sit inside `<App>`, which client-side-redirects unauthenticated visitors (`App.tsx:79-94`) — the missing layer is company/role only, and the `isGuestUser` gate is one disabled button (`FieldSetupDashboard.tsx:34,236`). Backend CONFIRMED **High** — covered by the new `updateChannel` finding above; the route-guard gap is cosmetic by comparison.
+- [ ] ⚠️ **Storage upload auth.** Scoped correction: only `POST /storage/denobox/security-camera-upload` is `@Public()` + `SecuritySecretGuard` (static shared header secret, non-constant-time compare — `storage.controller.ts:56-58`, `security-secret.guard.ts:18-30`). The portal's `POST /storage/denobox/upload` and the other two upload endpoints **require JWT** (`storage.controller.ts:26-54`). **Low-Medium.** Fix: per-device credentials (or at least `timingSafeEqual`) for the camera endpoint.
 
-## P3 — Placeholders & incomplete features (visible to users)
+## P2 — Likely bugs (verified)
 
-- [ ] **Alarm in-app notifications hardcode `senderName: "Trinity Trinity"`** — development placeholder in every alarm notification's metadata. — `webhook.service.ts:499` · doc: [webhooks](webhooks.md)
-- [ ] **Every alarm email BCCs `asayeed@denowatts.com`** — a personal address hardcoded into dispatch. — `webhook.service.ts:517` · doc: [webhooks](webhooks.md)
-- [ ] **Verify-installation `%` column is hardcoded `'0%'`** and the promised "red %" pass/fail is not implemented — the only real signal is a non-zero data count. — `VerifyInstallationForm.tsx:218-221` · doc: [field-setup](field-setup.md)
-- [ ] **Site-status "Tasks" column is hardcoded `'-'`** — not wired to ticket counts (Portfolio view has the real number). — `SiteStatusView.tsx:299` · doc: [status](status.md)
-- [ ] **Deno "Calibration Date" column is hardcoded `'N/A'`.** — `DenoListTable.tsx` · doc: [field-setup](field-setup.md)
-- [ ] **Portfolio Energy KPIs / Triage / Irradiation sub-pages are static S3 screenshots**, not live charts. — `EnergyKPIsPage.tsx` etc. · doc: [portfolio](portfolio.md)
-- [ ] **API Management is an orphaned route** — registered + guarded but absent from every menu and unlinked; reachable only by typed URL. Superseded or unfinished? — `router.tsx:414-424` · doc: [settings](settings.md)
-- [ ] **Report `LAST_N_DAYS` range not implemented** — logs a warning and falls back to YESTERDAY. — `report.service.ts` · doc: [report](report.md)
-- [ ] **Quote renewals always assume monofacial modules** — bifacial detection for renewals not implemented; operators adjust by hand. — doc: [quote](quote.md)
-- [ ] **Site-level notification preferences are stored but never consumed** — `SiteNotificationSetting.channels`/`delay` saved but dispatch reads only company settings. Future feature or dead structure? — `site.schema.ts:105-136` · doc: [notification](notification.md)
-- [ ] **Phone "8–15 digits" rule is frontend-only** — backend accepts any string ≤20 chars. — `auth.input.ts:56-58` · doc: [authentication](authentication.md)
+- [ ] ✅ **`getSitesAccessCompanies` queries sites by a company id** — `findByIds([company])` runs `sites._id IN [companyId]` (`sites.service.ts:138-140,791`), which never matches, so the cross-company expansion is dead code and the function always returns `[company]`. Affects `getAllSites` and `companies.getSiteTags`. Likely intent: `find({ owner: company })`. **Confirmed bug** (under-exposure, not over-exposure).
+- [ ] ❌ **REFUTED — site update un-archiving events.** `restoreArchivedSiteEvents` does run on every live-site save, but the only writer of `archivedAt` in the entire backend is site soft-deletion — so on live sites it matches zero events (no-op) and only takes effect on un-delete, which is correct. Optional hardening: gate on the deleted→live transition. *(Doc corrected.)*
+- [ ] ❌ **REFUTED — capacity-test manual inputs.** The generated enums' runtime values are uppercase `'MANUAL'` (`graphql.ts:744-747,770-773`), matching the string comparison — the manual TRC/filter inputs render fine. Style-only: use the enum members. *(Doc corrected.)*
+- [ ] ✅ **Non-admin notification-settings edits silently no-op, with a false success toast** — `CompaniesService.update` strips non-SuperAdmin payloads to `{ siteTags }` (`companies.service.ts:78-82`); `updateCompany` is `@AllRoles()` (`companies.resolver.ts:43-51`); the Notification Management page has no `ProtectedRoute` (`router.tsx:509-515`) and is in every company user's menu; its `onCompleted` unconditionally toasts "saved" (`NotificationManagementPage.tsx:385-391,419-426`). **Confirmed end-to-end.** Needs a product call: allowlist `notificationSettings` for non-admins, or gate the page.
+- [ ] ✅ **Portfolio status summary includes soft-deleted sites** — `getPortfolioStatusSummary` builds its `$match` with no `deletedAt: null` (`sites.service.ts:852-884`), unlike `find` (`:145-148`) and `getAllSites` (`:808`); the input has no opt-in flag, so it can't be intentional. **Confirmed bug.** Fix: one line.
+- [ ] ❌ **REFUTED (as a functional bug) — `SiteDailyRollup` `date` query.** Mongoose 8's `strictQuery: false` passes the undeclared `date` path through, and three shipping consumers query this externally-written collection by `date` — the documents have it; the query matches. Real issue is only that the schema is missing `@Prop() date`. *(Doc corrected.)*
+- [ ] ⚠️ **Legacy chart `metrics: [metrics]` double-nesting** — wire shape confirmed (`chartApi.ts:46`; `metrics` is `string[]` end-to-end), but the receiving chart service is external and this is its only client, so the service evidently tolerates/expects the nesting. Can't be judged a defect from this repo; document the contract or fix both sides together.
+- [ ] ✅ **`formatServiceStatus` blanks COMMISSIONING in HubSpot** — no COMMISSIONING case, `default: ""` (`sites.service.ts:768-785`); the truthy-status guard then **includes** `service_status: ""` in the HubSpot payload (`:508-510`), overwriting the property on every prod save of a commissioning site. **Confirmed bug.**
+- [ ] ✅ **`ChannelsService.create` missing GATEWAY case — worse than flagged:** sending a valid `gatewayConfig` at create **throws** `BadRequestException("Invalid config")` (falls to `default`, `channels.service.ts:180-213`) even though the DTO advertises the field (`create-channel.input.ts:13-16`) and update/bulkUpdate both handle GATEWAY. Config-less create works. **Confirmed bug.**
+- [ ] ✅ **Race on channel `number`** — non-atomic `MAX+1` (`channels.service.ts:215-216`) onto a global unique index (`channel.schema.ts:198`) with no transaction, retry, or duplicate-key catch (unlike `update`, `:826-849`) — concurrent creates 500 with a raw E11000. **Confirmed bug.**
+- [ ] ✅ **`Metric.minRange`/`maxRange` silently dropped** — `@Field` with no `@Prop` (`metric.schema.ts:126-130`), strict-mode Mongoose discards them on create *and* update, while the mapped inputs accept them and the UI sends them (`MetricsUpsertModal.tsx:171-174`). The feature is a silent no-op. **Confirmed bug.** Fix: add the two `@Prop`s.
+- [ ] ❌ **REFUTED — plaintext passwords via `createUser`/`updateUser`.** `User.password` has no `@Field` (`user.schema.ts:43-44`), so the mapped GraphQL inputs don't contain a password field at all — a client sending one fails GraphQL validation. Only `signUp` passes a password, argon2-hashed first. Residual: a future *internal* caller of `usersService.create` with a raw password would store plaintext. *(Doc corrected.)*
+- [ ] ✅ **`NotificationService.createMany` floats its promise** — `insertMany` not awaited/returned/caught (`notification.service.ts:20-22`); all three callers invoke it bare, and even `comments.service.ts`'s surrounding try/catch can't see the rejection (`:134-137`). Failures silently lose notifications + risk `unhandledRejection`. **Confirmed bug.**
+- [ ] ✅ **`PromptsService.create` un-awaited save in try/catch** (`prompts.service.ts:17-29`) — the rejection still reaches the caller, but the method's logger/Sentry capture is bypassed. **Confirmed, minor** (observability only). Fix: `return await`.
+- [ ] ⚠️ **`User.lastName` nullability mismatch** — non-nullable GraphQL field over a non-required Mongo prop (`user.schema.ts:51-54`). All create paths require it, **but** `UpdateUserInput`'s `PartialType` accepts an explicit `lastName: null` (passes `@IsOptional()`, not in the forbidden-field list) and writes it — after which every query selecting that user's `lastName` throws a serialization error. Legacy docs also unconstrained. Fix: make the field nullable in GraphQL (or required in Mongo after backfill) and reject explicit null.
 
-## P4 — Dead code & cleanup
+## P3 — Placeholders & incomplete features (from the documentation pass; not re-verified)
 
-- [ ] **Delete the dead assets-module metrics trio** — `src/assets/metrics.resolver.ts`, `metrics.service.ts`, `metrics.service.spec.ts` are unregistered duplicates that have drifted from the active `src/metrics/` versions. (Keep the schema/DTO re-exports — still imported.) — docs: [metrics](metrics.md), [assets](assets.md)
-- [ ] **`dto/create-asset.input.ts` superseded** — the resolver uses the class from `dto/asset.input.ts`. — doc: [assets](assets.md)
-- [ ] **`CreateUserModal.tsx` is a dead stub** (titled "Create Event", unimported) — there is no working create-user UI. — doc: [users](users.md)
-- [ ] **`webhook.service.spec.ts` doesn't test the real service** — re-implements local helper copies that no longer match production logic; false coverage. — doc: [webhooks](webhooks.md)
-- [ ] **Stale "Bull/Redis" comments** — `report-service.types.ts` and backend CLAUDE.md claim BullMQ, but the live queue is Agenda over MongoDB; no Bull code exists. — doc: [agenda](agenda.md)
-- [ ] **Prompts feature has no frontend consumer** — backend plumbed end-to-end and published in the schema, but nothing calls it. In-progress or abandoned? — doc: [prompts](prompts.md)
-- [ ] **`JwtModule` default `expiresIn: '5m'` is dead config** — every sign() passes an explicit TTL. — `auth.module.ts:34` · doc: [authentication](authentication.md)
-- [ ] **`AlarmConfig.isAcknowledgeable` is orphaned** — on the schema and test mocks, exposed by no operation, rendered nowhere. — doc: [alarm-config](alarm-config.md)
-- [ ] **OTP flow has no identified caller** — `requestForOtp`/`verifyOtp` exist and are public, but no UI component invokes them. — doc: [authentication](authentication.md)
+- [ ] **Alarm in-app notifications hardcode `senderName: "Trinity Trinity"`** — `webhook.service.ts:499` · doc: [webhooks](webhooks.md)
+- [ ] **Every alarm email BCCs `asayeed@denowatts.com`** — `webhook.service.ts:517` · doc: [webhooks](webhooks.md)
+- [ ] **Verify-installation `%` column hardcoded `'0%'`**; promised pass/fail not implemented — `VerifyInstallationForm.tsx:218-221` · doc: [field-setup](field-setup.md)
+- [ ] **Site-status "Tasks" column hardcoded `'-'`** — `SiteStatusView.tsx:299` · doc: [status](status.md)
+- [ ] **Deno "Calibration Date" hardcoded `'N/A'`** — `DenoListTable.tsx` · doc: [field-setup](field-setup.md)
+- [ ] **Portfolio Energy KPIs / Triage / Irradiation are static S3 screenshots** — doc: [portfolio](portfolio.md)
+- [ ] **API Management is an orphaned route** — `router.tsx:414-424` · doc: [settings](settings.md)
+- [ ] **Report `LAST_N_DAYS` not implemented** (falls back to YESTERDAY) — `report.service.ts` · doc: [report](report.md)
+- [ ] **Quote renewals always assume monofacial modules** — doc: [quote](quote.md)
+- [ ] **Site-level notification preferences stored but never consumed** — `site.schema.ts:105-136` · doc: [notification](notification.md)
+- [ ] **Phone "8–15 digits" rule is frontend-only** — `auth.input.ts:56-58` · doc: [authentication](authentication.md)
 
-## P5 — Performance & indexes
+## P4 — Dead code & cleanup (not re-verified)
 
-- [ ] **`statuslogs` has no indexes** — every read sorts by `timestamp` desc and matches `metadata.service`/`subService`; needs a compound index at volume. — doc: [status-logs](status-logs.md)
-- [ ] **`companies` lacks indexes on query targets** — `apiKey` (auth lookup on every public-API request), `verifiedDomains`, `whitelistedIPs`, `siteTags`. — doc: [companies](companies.md)
-- [ ] **`comments` has no index on `event`** — the email-cycle query `find({ event })` slows on high-volume events. — doc: [events](events.md)
-- [ ] **User name search is an unescaped regex** on raw input and ignores the existing text index — minor ReDoS/correctness smell. — doc: [users](users.md)
-- [ ] **S3 listing hard-capped at 1,000 keys with no pagination** — large Denobox folders silently truncate; and search with `query` fires one `HeadObject` per matching file. — doc: [storage](storage.md)
-- [ ] **`channels.findAll` resolves image URLs sequentially per channel** (awaited in a loop) — slow on image-heavy sites. — `channels.service.ts:657` · doc: [channels](channels.md)
-- [ ] **Activity-log plugin uses process-global static state** (`previousData`/`updatedObject`) — concurrent writes can cross-attribute a log's before/changes. Also: **bulk operations are not audited at all.** — `activity-logs.service.ts:36-38` · doc: [activity-logs](activity-logs.md)
+- [ ] **Delete the dead assets-module metrics trio** (`src/assets/metrics.resolver.ts`/`.service.ts`/`.spec.ts`) — drifting unregistered duplicates · docs: [metrics](metrics.md), [assets](assets.md)
+- [ ] **`dto/create-asset.input.ts` superseded** — doc: [assets](assets.md)
+- [ ] **`CreateUserModal.tsx` dead stub** — doc: [users](users.md)
+- [ ] **`webhook.service.spec.ts` tests re-implemented helpers, not the real service** — doc: [webhooks](webhooks.md)
+- [ ] **Stale "Bull/Redis" comments; actual queue is Agenda** — doc: [agenda](agenda.md)
+- [ ] **Prompts feature has no frontend consumer** — doc: [prompts](prompts.md)
+- [ ] **`JwtModule` default `expiresIn: '5m'` is dead config** — `auth.module.ts:34` · doc: [authentication](authentication.md)
+- [ ] **`AlarmConfig.isAcknowledgeable` orphaned** — doc: [alarm-config](alarm-config.md)
+- [ ] **OTP flow has no identified caller** — doc: [authentication](authentication.md)
 
-## P6 — Architecture confirmations (logic that lives outside this repo)
+## P5 — Performance & indexes (not re-verified)
 
-- [ ] **Where is connection status produced?** Nothing in the backend writes `Site/Channel.connectionStatus`, `lastReportedAt`, or `lastConnectedAt`. Confirm the external ingestion service, its staleness thresholds, and the channel→site PARTIALLY_CONNECTED rollup rule. — docs: [status](status.md), [status-logs](status-logs.md)
-- [ ] **Where is alarm threshold evaluation run?** Alarm-config stores rules but nothing evaluates them here; events arrive pre-flagged. Confirm the upstream pipeline. — doc: [alarm-config](alarm-config.md)
-- [ ] **Where do the chart services get their data?** Confirm whether `VITE_CHART_URL`/`VITE_PLOTLY_URL` proxy the NestJS report fleet-summary endpoint or compute independently from the rollups. — doc: [analytics](analytics.md)
-- [ ] **Where do archived capacity-test report snapshots persist?** Not visible in this repo. — doc: [tests](tests.md)
-- [ ] **DocuSeal SIGNED transition** — `processQuoteForSigning` leaves quotes in REQUESTED_FOR_SIGNING; the move to SIGNED presumably happens via an external webhook not found here. — doc: [quote](quote.md)
-- [ ] **Channel-id taxonomy** — the prefix conventions (`1.1.1` POA, `1.1.2` GHI, `3.1` inverter, `5.2.1` AC meter…) are hard-coded in the frontend; confirm the canonical definition. — doc: [site-builder](site-builder.md)
-- [ ] **`CAPACITY_TEST_PYTHON_SECRET` vs `PYTHON_SERVER_SECRET`** — two secrets for two Matrix endpoints, with a misleading name on the first (it gates *faults*, not run-test). Confirm both are set everywhere. — doc: [tests](tests.md)
+- [ ] **`statuslogs` has no indexes** (hot path sorts by `timestamp` desc) — doc: [status-logs](status-logs.md)
+- [ ] **`companies` lacks indexes on `apiKey`/`verifiedDomains`/`whitelistedIPs`/`siteTags`** — doc: [companies](companies.md)
+- [ ] **`comments` has no index on `event`** — doc: [events](events.md)
+- [ ] **User name search: unescaped regex, ignores text index** — doc: [users](users.md)
+- [ ] **S3 listing capped at 1,000 keys; per-file `HeadObject` on search** — doc: [storage](storage.md)
+- [ ] **`channels.findAll` resolves image URLs sequentially** — `channels.service.ts:657` · doc: [channels](channels.md)
+- [ ] **Activity-log plugin: process-global static state race; bulk ops unaudited** — `activity-logs.service.ts:36-38` · doc: [activity-logs](activity-logs.md)
+
+## P6 — Architecture confirmations (outside this repo)
+
+- [ ] **Where is connection status produced?** No backend writer for `connectionStatus`/`lastReportedAt`/`lastConnectedAt`; confirm the ingestion service, thresholds, and PARTIALLY_CONNECTED rollup — docs: [status](status.md), [status-logs](status-logs.md)
+- [ ] **Where does alarm threshold evaluation run?** Events arrive pre-flagged — doc: [alarm-config](alarm-config.md)
+- [ ] **Do the chart services proxy the report fleet-summary endpoint or compute independently?** — doc: [analytics](analytics.md)
+- [ ] **Where do archived capacity-test snapshots persist?** — doc: [tests](tests.md)
+- [ ] **DocuSeal SIGNED transition** presumably via external webhook — doc: [quote](quote.md)
+- [ ] **Canonical channel-id taxonomy** (prefix conventions hard-coded in the frontend) — doc: [site-builder](site-builder.md)
+- [ ] **`CAPACITY_TEST_PYTHON_SECRET` vs `PYTHON_SERVER_SECRET`** — two secrets, misleading name on the first — doc: [tests](tests.md)

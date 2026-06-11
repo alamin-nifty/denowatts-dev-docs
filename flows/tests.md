@@ -164,7 +164,7 @@ All `/tests` date logic lives in `TestSettings.tsx`, site-tz-aware via dayjs `ut
 - **`channelFaults` has no role guard** — any authenticated user triggers OpenAI generation (one call per fault code) — `channels.resolver.ts:64`.
 - **Dash re-mounts on every param change** (`key` includes all params) — each tweak re-fetches the whole dashboard.
 - **Silent site clearing** — a shared URL with an inaccessible site → `validatedSite = null`, no error (`TestSettings.tsx:84`).
-- **Manual-block visibility bug-smell** — Step 2 sets enum values but the conditional render compares the string `'MANUAL'`; if the enum runtime value is lowercase the manual inputs may never show. UNCLEAR — `CapacityTestStep2.tsx:229,288`.
+- **Manual-block visibility — verified working.** Step 2 compares state against the literal `'MANUAL'` (`CapacityTestStep2.tsx:229,288`); the generated enums' runtime values are uppercase `'MANUAL'` (`graphql.ts:744-747,770-773`), so the manual inputs do render. Style note only: the literals should be the enum members.
 - **Wizard download depends on a reachable `fileLink`** — a 404 marks the run failed even if the report was produced (`CapacityTestStep2.tsx:118`).
 
 ---

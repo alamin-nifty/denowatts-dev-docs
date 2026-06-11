@@ -86,7 +86,7 @@ Resolver: `denowatts-backend/src/users/users.resolver.ts`. Every operation runs 
 - Resolver: `users.resolver.ts:19-23`. **Role required: `@Roles(UserType.SUPER_ADMIN)`** (line 19). (ADMIN/USER are rejected by `RolesGuard`; SUPER_ADMIN passes.)
 - Input: `CreateUserInput` (see DTOs). Return: full `User` ObjectType (note: `password` is `select:false`, so it is never returned).
 - Calls `usersService.create(createUserInput)`.
-- **Caveat:** the resolver passes the input straight to `userModel.create` with **no password hashing**. Self-signup hashes the password first in `AuthService.signUp` before calling `usersService.create`. A raw `createUser` mutation would store whatever `password` is provided as-is — see Edge cases.
+- **Caveat (verified — not exploitable via GraphQL):** `User.password` has `@Prop` but **no `@Field`** (`user.schema.ts:43-44`), so the mapped `CreateUserInput`/`UpdateUserInput` do **not** expose a `password` field in the GraphQL schema — a client sending one gets a validation error before any resolver runs. The only production caller passing a password is `AuthService.signUp`, which argon2-hashes first. Residual note: `usersService.create` itself never hashes, so a *future internal caller* passing a raw password would store plaintext (the TypeScript type includes `password` even though GraphQL doesn't).
 
 ### Query `users(filter: FilterUserInput): [User!]!`  (GraphQL name: `users`)
 - Resolver `findAll` — `users.resolver.ts:25-32`. No `@Roles` -> any authenticated user, but results are **company-scoped** in the service for non-SUPER_ADMIN.
