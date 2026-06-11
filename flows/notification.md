@@ -1,8 +1,63 @@
+---
+title: Notification
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Notification
 
-**What it does (business):** Denowatts delivers three categories of notification: (1) user-targeted **in-app notifications** that appear in the header bell icon for events such as alarm creation, comment mentions, and event category triggers; (2) **email notifications** sent via SendGrid for tickets, alarm events, ticket updates, and comment cycles; and (3) a **system-wide banner notification** that a Super Admin can broadcast to all portal users on login. Notification preferences are configured per company (for event/alarm types) and per site (for per-alarm-config delivery rules).
+Notifications are how the platform gets your attention. There are three kinds: the **in-app bell** in the header, which collects personal notifications (an alarm opened, someone mentioned you in a comment, a new event in a category you follow); **emails**, sent for tickets, alarms, event activity, and comment threads; and a **system-wide banner** that a platform administrator can broadcast to every user — shown as a pop-up the next time each person logs in.
 
-**Entry point(s):**
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains the notification kinds, what triggers them, and who controls delivery. *Developer* adds the full GraphQL surface, the services, every schema and DTO shape, the complete trigger map, file references, and a solar-terminology primer.
+
+---
+
+## Why this matters
+
+A monitoring platform is only useful if the right person hears about a problem while it's still happening. The notification system is the last mile: it decides whether an alarm becomes an email in a manager's inbox, a red badge on the bell, or silence. Company administrators tune that delivery per event type, so a Critical alarm can page everyone while routine notes stay quiet.
+
+---
+
+## The three kinds of notification
+
+- **In-app (the bell)** — each user has a private feed of notifications, newest first, with an unread badge. Clicking one deep-links to the relevant event; you can mark one or all as read. Nobody can see anyone else's notifications.
+- **Email** — sent for new tickets (to the ticket's creator), ticket changes (with the list of what changed), alarm openings and closings, new events in subscribed categories, and comment activity on events you're involved in.
+- **System banner** — a single platform-wide announcement. When an administrator turns it on (or edits it), every user sees it once as a pop-up at login; it won't reappear for them until the message is updated again.
+
+---
+
+## What triggers a notification
+
+- **An alarm opens or closes** — the monitoring pipeline calls the platform, which notifies the people each connected company chose for that severity (Critical / High / Routine), by email and/or the bell. See [[webhooks]] and [[alarm-config]].
+- **A new event is created** — for eligible event categories (tickets, maintenance, malfunctions, notes, and others), the company's settings decide who is told. See [[events]].
+- **A ticket is created or changed** — the ticket's creator is emailed, with a change summary on updates.
+- **Someone comments on an event** — everyone already in the conversation (creator, prior commenters, previously mentioned people) gets an email; anyone **@-mentioned** in the comment also gets a bell notification.
+- **An administrator updates the system banner.**
+
+---
+
+## Who controls what
+
+- **Company-level settings drive delivery.** Each company maintains a grid of rules — one per alarm severity and event category — choosing site managers and/or specific named users, and whether each rule sends email, in-app, or both, with a master on/off per rule. See [[settings]] and [[companies]].
+- **Site-level preferences are saved but not yet active.** A site can record per-alarm-rule delivery preferences (channels, delays, extra emails), and the screen for it requires the Enterprise plan or an administrator — but the alarm and event dispatch paths do not read these preferences today. They appear to be groundwork for a future or partially built feature (flagged for review).
+- **Only platform administrators (Super Admins)** can create or edit the system banner.
+
+---
+
+## The rules that matter
+
+- **Your bell is yours alone** — notifications are always scoped to the signed-in user.
+- **Only active users are notified** — deactivated or deleted accounts are skipped everywhere.
+- **A rule must be switched on to fire** — inactive company notification rules are ignored.
+- **There is exactly one system banner** — creating a second one just returns the existing one; the banner reappears for users only when it is updated.
+- **Delivery is best-effort** — if a notification or email fails to send, the action that triggered it (the comment, the event) still succeeds; failures are logged internally rather than shown to users.
+- **There is no SMS or push notification** — delivery is email and the in-app bell only, and the bell updates when the app refreshes it, not in real time.
+
+---
+
+## Entry points {dev}
 - In-app bell icon — `denowatts-portal/src/common/components/Header.tsx` (lines 233–292)
 - Site Notifications tab — `denowatts-portal/src/pages/dashboard/site/notifications/NotificationsPage.tsx` (route `/site/:siteId/notifications`)
 - Notification Management (company-wide) — `denowatts-portal/src/pages/dashboard/settings/notification-management/NotificationManagementPage.tsx` (route `/settings/notification-management`)
@@ -11,7 +66,7 @@
 
 ---
 
-## Notification types / channels
+## Notification types / channels {dev}
 
 | Category | Channel | Trigger | Who receives |
 |---|---|---|---|
@@ -22,7 +77,7 @@
 
 ---
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 ### Queries
 
@@ -66,7 +121,7 @@
 
 ---
 
-## Services
+## Services {dev}
 
 ### NotificationService — `denowatts-backend/src/notification/notification.service.ts`
 
@@ -111,7 +166,7 @@
 
 ---
 
-## Schemas
+## Schemas {dev}
 
 ### Notification — `denowatts-backend/src/notification/schemas/notification.schema.ts`
 
@@ -149,7 +204,7 @@ Note: This schema also decorates with `@InputType('SystemNotificationInput')` an
 
 ---
 
-## DTOs
+## DTOs {dev}
 
 ### `CreateNotificationInput` — `denowatts-backend/src/notification/dto/notification.dto.ts`
 
@@ -213,7 +268,7 @@ Paginate base fields: `docs`, `totalDocs`, `limit`, `totalPages`, `page`, `pagin
 
 ---
 
-## Trigger map
+## Trigger map {dev}
 
 ### Trigger 1: Alarm event created (via webhook)
 - **Where:** `denowatts-backend/src/webhooks/webhook.service.ts:422` — `processAlarm(dto)`
@@ -270,7 +325,7 @@ Paginate base fields: `docs`, `totalDocs`, `limit`, `totalPages`, `page`, `pagin
 
 ---
 
-## Company-level notification settings (configuration path)
+## Company-level notification settings (configuration path) {dev}
 
 Stored in `Company.notificationSettings: NotificationSettings[]` — see `denowatts-backend/src/companies/schemas/company.schema.ts:41`.
 
@@ -294,7 +349,7 @@ Configured via `NotificationManagementPage` which calls `updateCompany` mutation
 
 ---
 
-## Site-level notification settings (configuration path)
+## Site-level notification settings (configuration path) {dev}
 
 Stored in `Site.notificationSettings: SiteNotificationSetting[]` — see `denowatts-backend/src/sites/schemas/site.schema.ts:109`.
 
@@ -313,7 +368,7 @@ Configured via `NotificationsPage` (site tab) — available only to Super Admins
 
 ---
 
-## Data touched
+## Data touched {dev}
 
 - `notifications.recipient` — queried and filtered on every `paginateNotifications` call and `readNotifications` call — `denowatts-backend/src/notification/notification.service.ts`
 - `notifications.read` — updated to `true` on mark-read mutations; counted for `unreadCount` — `denowatts-backend/src/notification/notification.service.ts`
@@ -324,7 +379,7 @@ Configured via `NotificationsPage` (site tab) — available only to Super Admins
 
 ---
 
-## Business rules
+## Business rules (cited) {dev}
 
 - **In-app notifications are fire-and-forget:** `createMany` has no `await` and no error handling — a DB failure during bulk insert is silently ignored — `denowatts-backend/src/notification/notification.service.ts:20`
 - **System notification is a singleton:** `create()` returns the existing record without creating a new one if any document already exists in the collection — `denowatts-backend/src/notification/system-notification.service.ts:15`
@@ -342,7 +397,7 @@ Configured via `NotificationsPage` (site tab) — available only to Super Admins
 
 ---
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 
 - **No push / SMS:** the platform has no WebSocket subscription, push provider, or SMS integration for notifications. All real-time delivery is via email (SendGrid) or polling (`paginateNotifications` is polled on header mount with `refetch`).
 - **`createMany` is void:** callers that call `notificationService.createMany(...)` without `await` cannot know if the insert succeeded. Failures are invisible.
@@ -355,7 +410,7 @@ Configured via `NotificationsPage` (site tab) — available only to Super Admins
 
 ---
 
-## Flow
+## Flow {dev}
 
 1. **In-app notification created** — external trigger (alarm/event/comment) → `NotificationService.createMany()` — `denowatts-backend/src/notification/notification.service.ts:20`
 2. **User opens bell icon** — `Header.tsx` queries `paginateNotifications({ limit: 10, page: 1 })` — `denowatts-portal/src/common/components/Header.tsx:237`
@@ -368,4 +423,23 @@ Configured via `NotificationsPage` (site tab) — available only to Super Admins
 
 ---
 
-**Related flows:** [flows/events.md](events.md) (event/alarm creation and update), [flows/settings.md](settings.md) (notification management and system notification settings pages)
+## Solar & platform terminology {dev}
+
+- **In-app notification** — a `Notification` document targeted at one `recipient` user; surfaced in the header bell with an unread badge, deep-linking via its `link` field.
+- **System notification (banner)** — the singleton `SystemNotification` document; when `status: true`, every user sees a modal once per `updatedAt` change (tracked in `localStorage`).
+- **Notification settings (company)** — `Company.notificationSettings[]`: one row per alarm severity / event category choosing site managers and/or `otherUsers`, email and/or in-app, with an `isActive` master switch.
+- **Notification settings (site)** — `Site.notificationSettings[]`: per-alarm-config channel/delay/email preferences; saved by the site Notifications tab but **not consumed** by current dispatch paths.
+- **Severity** — `CRITICAL / HIGH / ROUTINE`; alarm notifications are routed by matching event severity to a company setting's `type`. See [[alarm-config]].
+- **Alarm dispatch** — the webhook-triggered path that fans an alarm event out to email + in-app recipients. See [[webhooks]].
+- **Mention** — `@[Full Name](userId)` markup in an event comment; produces an in-app `MENTION` notification for each valid mentioned user. See [[events]].
+- **Comment cycle** — the email audience for a new comment: event creator + all prior commenters + all previously mentioned users.
+- **Site manager** — a user attached to a site; the `siteManagers` flag on a setting includes all of them as recipients. See [[site]].
+- **Unread count** — the bell badge number: count of the user's notifications with `read: false`.
+- **SendGrid** — the transactional email provider behind every notification email (dynamic templates).
+- **Fire-and-forget** — the dispatch style for in-app inserts and emails: not awaited, failures logged to Sentry, the triggering action still succeeds.
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[events]] · [[settings]] · [[webhooks]] · [[alarm-config]] · [[companies]] · [[site]] · [[solar-glossary]]

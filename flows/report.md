@@ -1,14 +1,89 @@
+---
+title: Report
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Report
 
-**What it does (business):** Enables operators and super-admins to define reusable "report templates" that produce fleet-wide performance summary tables — Excel workbooks or inline table data — covering any combination of sites, date ranges, metrics, and KPIs. Templates can be scheduled (daily, weekly, monthly, yearly) to auto-generate and email Excel attachments to site managers and named recipients via SendGrid, or triggered on-demand. The report module also exposes REST and GraphQL endpoints for ad-hoc fleet-summary data used by the portfolio and analytics dashboards.
+A **report** is a scheduled (or on-demand) performance summary for a fleet of solar sites. You build a reusable **report template** — pick the sites, the columns (metrics, KPIs, site properties, custom formula columns), how rows are grouped, the reporting period, and who should receive it — and the platform generates the report on schedule, renders it to an Excel workbook, and emails it to the recipients. The same engine also powers the on-screen fleet summary tables on the Portfolio and Analytics dashboards.
 
-**Entry point(s):** The report module is consumed from two directions:
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what report templates are, how scheduling and delivery work, and the rules behind the numbers. *Developer* adds the full GraphQL/REST surface, the services and aggregation pipelines, every schema, DTO, and utility, the background-job lifecycle, file references, and a solar-terminology primer.
+
+---
+
+## Why this matters
+
+Reports are how performance leaves the platform and lands in stakeholders' inboxes. An asset manager who never logs in still gets a monthly Excel showing how every site performed — production, expected production, availability, performance indices. Because the numbers come from the same daily rollup data that powers the dashboards, the emailed report and the on-screen view always agree. Getting templates right (the correct sites, period, and KPI math) is what makes those numbers trustworthy.
+
+---
+
+## Report templates — what goes in a report
+
+A template is a saved definition of a report. It captures:
+
+- **Sites** — either a fixed list, or "all sites" (resolved fresh each time the report runs, so new sites are picked up automatically; optionally filtered by service status).
+- **Columns** — any mix of:
+  - **Metrics and KPIs** — measured values (energy produced, expected energy, losses) and calculated indices (EPI, BEPI, energy/equipment availability).
+  - **Site properties** — descriptive columns such as AC nameplate, DC capacity, state, module model, inverter model, mount type, owner, tags, managers, latest site note.
+  - **Custom columns** — your own formula built from metrics, site properties, numbers, and arithmetic operators, with a label and unit you choose.
+- **Grouping** — rows per site, or bucketed by day / week / month / year (with subtotal rows per period), and an optional secondary grouping by a site attribute (manager, state, owner, mount type, etc.).
+- **Reporting period** — a rolling window such as "yesterday", "previous 7/30/90 days", "this month", "previous month", "previous 12 months", "this year", or "previous year", resolved at run time.
+- **Recipients & schedule** — named users, plus optionally every site's managers; and when to send it.
+
+---
+
+## Scheduling and delivery
+
+- **Frequencies:** daily, every Monday, first day of month, last day of month, first day of year, last day of year — at a chosen hour and minute (UTC).
+- Scheduled runs are executed by the platform's background job scheduler; jobs survive server restarts and are re-registered on boot. See [[agenda]].
+- A double calendar guard ensures the report only actually generates on the correct day and at the correct time, even if the underlying schedule fires more broadly.
+- The report renders to an **Excel workbook** (styled headers, subtotal rows, a grand-total row, and traffic-light coloring on key availability/performance columns) and is emailed to recipients as an attachment.
+- You can also send a **test email** on demand to preview a template; the test snapshot is kept for one hour and then automatically discarded.
+- A "last N days" period option exists in the data model but is not yet implemented — it currently falls back to "yesterday".
+
+---
+
+## Custom columns and KPI math
+
+- **Custom columns** are formulas evaluated per row. If any input is missing for a row, the cell is left blank rather than silently shown as zero.
+- **KPI totals are recomputed, not averaged.** The grand-total row re-evaluates each KPI formula from the summed base metrics — avoiding the statistical error of averaging percentages across sites.
+- **Default aggregation follows the unit:** quantities (kWh, MWh, mm…) are summed; rates and temperatures (%, °C, W/m²…) are averaged; KPIs always use formula re-evaluation. A template can override this per column.
+- **Capacities are shown in MW** (AC nameplate and DC capacity), even though they are stored internally in kW.
+- If a site has no measured predicted energy for the period, the predicted value falls back to the site's monthly energy model, prorated to the portion of the month covered.
+
+---
+
+## Who can do what
+
+- **Super-admins** see and manage every company's templates; everyone else (managers, admins) sees only their own company's.
+- **"All sites" depends on who created the template:** for a super-admin creator it means every site on the platform; for anyone else it means only their company's sites.
+- The company list and managers list used in the report filters are **super-admin only**; the site list is available to super-admins, admins, and managers, scoped to their company access.
+
+---
+
+## The rules that matter
+
+- **Inactive templates never send.** A template's schedule can be switched off without deleting it; the runtime checks the flag before generating.
+- **Reports fire at an exact UTC hour:minute** on the scheduled day — recipients in other timezones should account for this.
+- **Test report snapshots expire after one hour.**
+- **The staging environment never schedules report jobs** (so test deployments can't email real recipients on a schedule).
+- **Excel coloring applies to two KPI columns only** (equipment availability and EPI): below 50 is pink, 50–94 yellow, 95 and above green.
+- **Deleting a template also cancels its scheduled job**, so no orphaned reports keep sending.
+
+---
+
+## Entry points {dev}
+
+The report module is consumed from two directions:
 - **Reports micro-app** (separate URL): GraphQL queries/mutations `reportTemplates`, `createReportTemplate`, `updateReportTemplate`, `removeReportTemplate`, `sendTestEmail`, `reportGetAllSites`, `reportGetManagers`, `reportCompanies`, `reportMetrics`. Frontend types confirmed in `denowatts-portal/src/graphql/__generated__/graphql.ts`.
 - **Portfolio and internal dashboard pages** (`denowatts-portal/src/pages/dashboard/portfolio/`, `denowatts-portal/src/pages/dashboard/analytics/`): call `POST /api/report/fleet/summary/new`, `POST /api/report/fleet/summary`, `POST /api/report/metrics`, and `POST /api/report/fleet/summary/excel` directly via REST.
 
 ---
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 ### Queries
 
@@ -100,7 +175,7 @@ Handled by `denowatts-backend/src/report/report.controller.ts` (`/api/report`):
 
 ---
 
-## Services
+## Services {dev}
 
 ### `ReportService` — `denowatts-backend/src/report/report.service.ts`
 
@@ -272,7 +347,7 @@ Filters users with manager/admin role, applies company access chain, excludes DE
 
 ---
 
-## Schemas
+## Schemas {dev}
 
 ### `ReportTemplate` — `denowatts-backend/src/report/schemas/report-template.schema.ts`
 Collection: `reporttemplates`
@@ -373,7 +448,7 @@ Documents created with `expiresAt = new Date(Date.now() + 3600000)` (1 hour).
 
 ---
 
-## DTOs & Types
+## DTOs & Types {dev}
 
 ### `denowatts-backend/src/report/dto/fleet-filter.dto.ts`
 
@@ -423,7 +498,7 @@ Documents created with `expiresAt = new Date(Date.now() + 3600000)` (1 hour).
 
 ---
 
-## Utility functions
+## Utility functions {dev}
 
 ### `build-mongo-expr.util.ts` — `denowatts-backend/src/report/utils/build-mongo-expr.util.ts`
 
@@ -657,7 +732,7 @@ Normalizes string/enum to `MetricAggregationMethod`. Accepts `'SUM'`, `'AVG'`, `
 
 ---
 
-## Business rules
+## Business rules (cited) {dev}
 
 - **Super-admin sees all companies' templates.** Non-super-admin (MANAGER, ADMIN) sees only their company's templates. — `denowatts-backend/src/report/services/report-template.service.ts`
 - **Staging environment skips job scheduling.** `addRepeatableReportForTemplate` is a no-op when `NODE_ENV === 'staging'`. — `denowatts-backend/src/report/report.service.ts`
@@ -681,7 +756,7 @@ Normalizes string/enum to `MetricAggregationMethod`. Accepts `'SUM'`, `'AVG'`, `
 
 ---
 
-## Data touched
+## Data touched {dev}
 
 - **`sitedailyrollups`** — primary read source for all fleet aggregations. Queried by `site $in`, date range, metric names + `CORE_REQUIRED_METRICS`. — `denowatts-backend/src/report/utils/fleet-aggregation.util.ts`, `denowatts-backend/src/report/report.service.ts`
 - **`siterollups`** — monthly rollup; used as fallback source for predicted energy model. — `denowatts-backend/src/report/report.module.ts`
@@ -697,7 +772,7 @@ Normalizes string/enum to `MetricAggregationMethod`. Accepts `'SUM'`, `'AVG'`, `
 
 ---
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 
 - **Legacy job name collision.** Before per-template naming, all templates shared job name `generate-daily-report`. `removeRepeatableReportForTemplate` cancels both old name and new `templateId` name to prevent ghost jobs. — `denowatts-backend/src/report/report.service.ts`
 - **Mixed ObjectId/name metric identifiers.** `FleetSummaryExcelInput` accepts either MongoDB ObjectId strings or plain metric names in the same array. `resolveMetricIdentifiers` handles the mix in 1–2 DB queries. — `denowatts-backend/src/report/utils/metric-resolution.util.ts`
@@ -714,7 +789,7 @@ Normalizes string/enum to `MetricAggregationMethod`. Accepts `'SUM'`, `'AVG'`, `
 
 ---
 
-## Queue / background jobs
+## Queue / background jobs {dev}
 
 ### Job scheduler: Agenda (MongoDB-backed)
 Library: `@nestjs/agenda`. Jobs persisted in MongoDB.
@@ -752,9 +827,23 @@ Processor: `denowatts-backend/src/report/report.processor.ts`
 
 ---
 
-**Related flows:**
-- [flows/portfolio.md](portfolio.md) — Portfolio page uses `POST /api/report/fleet/summary/new` for fleet data
-- [flows/analytics.md](analytics.md) — Analytics page may use fleet summary REST endpoints
-- [flows/settings.md](settings.md) — Metrics Management creates/edits the `Metric` documents that report templates reference
-- [flows/authentication.md](authentication.md) — All report GraphQL operations require a valid JWT; `@Roles()` guards enforce role access
-- [flows/solar-glossary.md](solar-glossary.md) — Defines EPI, BEPI, Energy Availability, Equipment Availability, and other KPI terms used throughout the report module
+## Solar & platform terminology {dev}
+
+- **Report template** — a saved definition of a fleet report: sites, columns, grouping, period, schedule, recipients. The unit this module manages.
+- **Fleet summary** — the tabular output (one row per site or per period) produced from daily rollup data; rendered as inline table data or Excel.
+- **KPI (key performance indicator)** — a calculated percentage index (EPI, BEPI, availability) defined by a formula over base metrics; always aggregated by re-evaluating the formula on sums (AGG), never averaged.
+- **EPI (Energy Performance Index)** — produced energy ÷ expected energy × 100; the headline "did the site do what the weather said it should" number.
+- **BEPI (Baseline EPI)** — produced energy ÷ predicted (modeled) energy × 100; compares against the pre-construction energy model rather than measured weather.
+- **Energy / Equipment availability** — percentage of expected energy not lost to outages, and percentage of equipment-hours the gear was available, respectively.
+- **Site daily rollup** — the pre-aggregated per-site per-day metric document that all fleet reporting reads from; reports never touch raw channel data directly.
+- **Adjusted expected energy** — expected energy minus identified losses (bias, shade, vegetation, soiling, snow, geospatial), or a pre-computed override when present.
+- **Site property** — a descriptive site attribute used as a report column (AC nameplate, state, module model, mount type, managers, tags…). Capacities are stored in kW but reported in MW.
+- **Custom column** — a user-defined formula column built from metrics, site properties, numbers, and operators; evaluated per row and re-evaluated from sums for totals.
+- **Aggregation method** — how a column is totalled: SUM, AVG, AGG (formula re-evaluation), or NONE (blank total).
+- **Agenda** — the MongoDB-backed background job scheduler that runs scheduled report generation. See [[agenda]].
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[portfolio]] · [[analytics]] · [[settings]] · [[metrics]] · [[agenda]] · [[authentication]] · [[solar-glossary]]

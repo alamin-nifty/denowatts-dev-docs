@@ -1,14 +1,80 @@
+---
+title: Assets
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Assets
 
-**What it does (business):** The assets module manages the physical hardware inventory of Denowatts solar monitoring deployments. It tracks five device types — Deno sensors, Radio units, Aux Pyranometers, Gateways, and Cellular Modems — through their lifecycle from registration to retirement, including calibration records, firmware versions, flags, and type-specific configuration. It also manages the metric catalogue (which solar data signals exist), per-company metric aliases, and provides a remote configuration interface for writing parameters directly to Deno sensor firmware via a Python proxy service.
+An **asset** is a physical piece of Denowatts hardware tracked in inventory — a Deno reference sensor, the radio paired to it, an auxiliary pyranometer, an on-site gateway, or a cellular modem. The assets module is the registry of all that equipment: every unit's serial number, model, firmware, calibration history, and condition, from registration through retirement. Alongside the hardware inventory it also keeps the platform's catalogue of **metrics** (the named data signals sites report) and lets each customer company use its own names for them.
 
-**Entry point(s):**
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what assets are, what's recorded about each device, and the rules around them. *Developer* adds the full GraphQL surface, the services and search logic, every schema and DTO shape, file references, and a terminology primer.
+
+---
+
+## Why this matters
+
+An asset on its own is just a box on a shelf — it becomes useful when it's wired up at a site as a data channel, and the link between the two is the **serial number**. The inventory is how the company knows what hardware exists, what shape it's in (condition flags from "good" through "replace urgently" to "retired"), when each sensor was last calibrated, and which SIM is in which modem. If the inventory drifts from reality, calibration audits, field repairs, and cellular billing all get harder.
+
+---
+
+## The hardware tracked
+
+Five kinds of device live in the inventory:
+
+- **Deno sensor** — the wireless Denowatts reference sensor (irradiance + temperature). Each Deno records which radio it's paired with.
+- **Radio** — the wireless link unit paired to a Deno, identified by MAC address.
+- **Aux Pyranometer** — an auxiliary irradiance sensor, with its calibration factor.
+- **Gateway** — the on-site data-acquisition box (Denobox), including its serial-port and network settings.
+- **Cellular modem** — the SIM/modem backhauling a site's data, with IMEI, SIM identifiers, WiFi details, and the credentials for the device's own web interface.
+
+---
+
+## What's recorded about each device
+
+Every asset carries a serial number, model, firmware version, a **condition flag** (Good / Watch / Replace / Replace Urgent / Maintenance Required / Retired), free-text notes, and a history of **calibration records** — each with a date and a downloadable certificate. Modems additionally carry their SIM details, which is how the platform's cellular-management features know which SIM belongs to which site. An asset is connected to its live data stream (a channel) by matching serial numbers, so the inventory record and the measurements from the same physical device stay linked. See [[channels]].
+
+---
+
+## Remote Deno configuration
+
+SuperAdmins can read and write a Deno sensor's firmware settings remotely — calibration gains and offsets, day/night/twilight reporting schedules, capacity and derate figures — and can issue reset and launch commands to the device. These operations talk to the live device through the platform's remote-management service; nothing is stored locally except the inventory record.
+
+---
+
+## Metrics and company-specific names
+
+The module also owns the **metric catalogue**: every named signal the platform understands, with its display name, unit, and which kinds of channel it applies to. Some metrics are **KPIs** computed from an expression combining other metrics, numbers, and site properties. On top of the global catalogue, each customer company can be given its own **alias** for a metric, so that company's reports and screens use the naming its team is used to.
+
+---
+
+## Who can do what
+
+- **Any signed-in user** can view asset lists and look up individual assets (non-SuperAdmin users must belong to a company).
+- **SuperAdmins only** can create or edit assets, manage metrics, and use the remote Deno configuration tools — both screens live under Settings (Asset Management and Remote Management). See [[settings]].
+
+---
+
+## The rules that matter
+
+- **Serial numbers are unique** among active Deno, aux-pyranometer, and modem assets; **MAC addresses are unique** among active radios and gateways.
+- **Assets are never truly deleted** — "deleting" one just marks it as removed (soft delete), so history and audit trails are preserved. The delete button isn't even exposed in the UI yet.
+- **Editing a Deno's serial or model updates its channel too** — any live data stream wired to that Deno is kept in sync automatically.
+- **A retired Deno can't keep a radio pairing** — the pairing is cleared when a Deno is registered as retired.
+- **Calibration certificates are stored privately** and downloaded via short-lived secure links.
+- **Metric names must be unique** across the catalogue.
+
+---
+
+## Entry points {dev}
 - Asset Management — `denowatts-portal/src/pages/dashboard/settings/asset-management/AssetManagementPage.tsx` — route `/settings/asset-management` (SuperAdmin only, wrapped in `ProtectedRoute`)
 - Remote Management — `denowatts-portal/src/pages/dashboard/settings/remote-management/RemoteManagementPage` — route `/settings/remote-management` (SuperAdmin only)
 
 ---
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 ### Resolver: AssetsResolver — `denowatts-backend/src/assets/assets.resolver.ts`
 
@@ -121,7 +187,7 @@ No class-level guard.
 
 ---
 
-## Services
+## Services {dev}
 
 ### AssetsService — `denowatts-backend/src/assets/assets.service.ts`
 
@@ -266,7 +332,7 @@ Uses an aggregation to find the metric with the highest trailing number matching
 
 ---
 
-## Schemas
+## Schemas {dev}
 
 ### Asset — `denowatts-backend/src/assets/schemas/asset.schema.ts`
 
@@ -373,7 +439,7 @@ Uses an aggregation to find the metric with the highest trailing number matching
 
 ---
 
-## DTOs
+## DTOs {dev}
 
 ### FilterAssetInput — `denowatts-backend/src/assets/dto/filter-asset.input.ts`
 
@@ -494,7 +560,7 @@ Extends `DenoConfig` with `serialNumber: String` (required, `@IsNotEmpty()`).
 
 ---
 
-## Business rules
+## Business rules (cited) {dev}
 
 - Soft delete via `deletedAt` field — no asset is ever hard-deleted through the public API. The "delete" action in the UI calls `updateAsset` with `deletedAt: new Date()`. — `denowatts-backend/src/assets/assets.service.ts:86`
 - Serial number must be globally unique across all non-deleted DENO and AUX_PYRANOMETER assets. — `assets.service.ts:87`
@@ -509,7 +575,7 @@ Extends `DenoConfig` with `serialNumber: String` (required, `@IsNotEmpty()`).
 
 ---
 
-## Data touched
+## Data touched {dev}
 
 - `assets` collection — full CRUD — `denowatts-backend/src/assets/assets.service.ts`
 - `assets.config` — stored as `SchemaTypes.Mixed`; structure varies by `type` — `denowatts-backend/src/assets/schemas/asset.schema.ts:247`
@@ -523,7 +589,7 @@ Extends `DenoConfig` with `serialNumber: String` (required, `@IsNotEmpty()`).
 
 ---
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 
 - **Two `CreateAssetInput` definitions exist.** `dto/create-asset.input.ts` and `dto/asset.input.ts` both export a class of that name. The resolver imports from `dto/asset.input.ts` which is the current, correct version (omits `_id`, `deletedAt`, `config` replaced with typed wrapper). The file at `dto/create-asset.input.ts` appears to be an older version. — `assets.resolver.ts:16`
 
@@ -551,8 +617,23 @@ Extends `DenoConfig` with `serialNumber: String` (required, `@IsNotEmpty()`).
 
 ---
 
-## Related flows
+## Solar & platform terminology {dev}
 
-- [flows/settings.md](settings.md) — settings menu structure and SuperAdmin access pattern
-- [flows/field-setup.md](field-setup.md) — gateway and Deno setup wizard that creates channel-to-asset associations
-- [flows/site.md](site.md) — site pages that display channel info derived from asset serial numbers
+- **Asset** — one physical piece of hardware in inventory; linked to its live data stream (channel) by serial number.
+- **Deno** — the Denowatts wireless reference sensor (irradiance + temperature); pairs with a **Radio** asset via the `radio` self-reference.
+- **Radio** — the wireless link unit for a Deno, identified by MAC address (and `macPreamble`).
+- **Aux pyranometer** — an auxiliary irradiance sensor; its config carries a `calibrationFactor`.
+- **Gateway (Denobox)** — the on-site data-acquisition box; its config holds RTU serial-port settings and a `socketxpId`.
+- **Modem / ICCID / IMEI** — the cellular backhaul device; `simIccid` is the SIM's unique id (and the Lattigo `device_name`), `imei` identifies the modem hardware. `cellularId` is Lattigo's internal id, for portal URLs only.
+- **Calibration record / certificate** — a dated calibration entry whose certificate file is stored privately in S3 and served via pre-signed URLs.
+- **Flag** — the asset's condition status: `GOOD`, `WATCH`, `REPLACE`, `REPLACE_URGENT`, `MAINTENANCE_REQUIRED`, `RETIRED`.
+- **Metric** — a named data signal (e.g. irradiance, energy) with display name, unit, and `channelPrefixes` scoping which channel types report it.
+- **KPI metric** — a computed metric whose `expression` array combines metrics, operators, numbers, and site properties.
+- **Company metric alias** — a per-company display name for a global metric, stored in `companymetrics` and surfaced as `companyWiseName`.
+- **Matrix service** — the external Python service (`matrix.denowatts.com`) the backend proxies to for live Deno firmware reads/writes/resets.
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[settings]] · [[field-setup]] · [[site]] · [[channels]] · [[metrics]] · [[solar-glossary]]

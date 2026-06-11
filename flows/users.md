@@ -1,14 +1,61 @@
+---
+title: Users
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Users
 
-**What it does (business):** The `users` module is the foundational identity model for the whole platform. Every authenticated actor is a `User` document with a role (`UserType`), an account status (`UserStatus`), and an optional association to a single `Company` (the multi-tenancy boundary). It exposes GraphQL operations to create, read, and update users, plus narrow helper queries used by the events/notification features (manager pickers and @mention autocomplete). Account creation via self-signup, login, password resets, and email confirmation live in the auth module — see `flows/authentication.md` — and call into `UsersService` rather than re-implementing it.
+Every person who signs into Denowatts is a **user account** — the identity record everything else hangs off. An account has a role (which decides what it may do), a status (whether it's usable yet), and usually a company (which decides what it may see). This module is the master record of those accounts; signing up, logging in, and password resets are handled by the authentication flow and documented separately.
 
-**Entry point(s):**
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains the account types, account states, and who may manage whom. *Developer* adds the full GraphQL surface, the field-by-field authorization logic, schema and DTO shapes, file references, and a terminology primer.
+
+## Why this matters
+
+Permissions across the entire platform start here. Whether a person can see a site, change a setting, or appear in a notification list comes down to three things on their account: role, status, and company. The logic in this module is also the canonical multi-tenancy enforcement — it's what keeps one customer's staff from reading or editing another customer's people.
+
+## The four account types
+
+- **User** — a standard end-user; effectively read-only in the portal. Can manage only their own profile.
+- **Admin** — a company administrator. Manages users inside their own company (including their role), but cannot move anyone between companies, change anyone's email, or change account status.
+- **SuperAdmin** — platform staff. Sees and manages every account across all companies, with no restrictions; the only role that can create users directly.
+- **system** — a reserved type for non-human/service accounts. Currently just a marker with no special behavior.
+
+## Account states
+
+- **Pending** — the state every new account starts in: signed up but email not yet confirmed. Cannot log in.
+- **Active** — email confirmed; the account is fully usable.
+- **Deleted** — soft-removed. The record is kept, but the account can no longer log in and is hidden from people-pickers.
+
+## Who can do what
+
+- **SuperAdmins** manage all accounts from Settings → Users Management: change roles, statuses, and company assignments across the platform.
+- **Admins** can edit users in their own company, but never anyone's email, company, or status.
+- **Everyone** can edit their own profile — name, phone, theme — but not their own email, role, or company.
+- **New accounts** normally arrive via self-signup followed by email confirmation; creating an account directly is SuperAdmin-only.
+
+## The rules that matter
+
+- **One account per email.** The email address is the unique login identity (stored lowercase).
+- **Company scoping is absolute** for non-SuperAdmins: every list, lookup, and edit is confined to the caller's own company.
+- **Removal is a soft delete** — the record stays, but the account is blocked and hidden.
+- **Email confirmation is what activates an account** (and attaches its company); it is the one path allowed to flip a Pending account to Active.
+- **Cross-company probing is blocked quietly**: an edit aimed at a user in another company fails as "not authorized" rather than revealing whether that user exists.
+- **Password changes go through the authentication flows** (change/reset password), never through ordinary profile edits.
+
+## Where user accounts show up
+
+Beyond login, two helper lookups feed other features: **manager pickers** (choosing site managers/owners) draw from the owning company *plus* every company granted access to its sites, and **@mention autocomplete** in events and notifications lists the active users in your company.
+
+## Entry points {dev}
 - Admin UI — Settings gear -> **Users Management** (SuperAdmin-only), route `/settings/users-management` — `denowatts-portal/src/pages/dashboard/settings/users-management/UsersManagementPage.tsx`. Menu link and search box: `denowatts-portal/src/common/components/Header.tsx:552`, search component `denowatts-portal/src/pages/dashboard/settings/users-management/components/UsersManagementSettings.tsx`.
 - Every other page indirectly: the logged-in `User` is resolved from the JWT and injected into resolvers via `@CurrentUser()` — `denowatts-backend/src/common/decorators/current-user.decorator.ts`.
 
 > Note: there is a `CreateUserModal.tsx` in the same folder, but it is a non-wired stub (its title says "Create Event" and it renders a single "Title" field). It is **not** used by the Users Management page — `denowatts-portal/src/pages/dashboard/settings/users-management/components/CreateUserModal.tsx`. New users are created only through self-signup (auth) or the `createUser` GraphQL mutation.
 
-## User roles & types
+## User roles & types {dev}
 
 `UserType` enum — `denowatts-backend/src/users/schemas/user.schema.ts:6-11`:
 
@@ -31,7 +78,7 @@
 
 All three enums are registered with GraphQL via `registerEnumType` (`user.schema.ts:25-27`).
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 Resolver: `denowatts-backend/src/users/users.resolver.ts`. Every operation runs behind the **global** `JwtAuthGuard` then `RolesGuard` (registered as `APP_GUARD` in `denowatts-backend/src/app.module.ts:179-185`), so a valid access-token JWT is required unless a handler is marked public. None of the user operations are public. `@CurrentUser()` is the authenticated `User` resolved by `JwtStrategy.validate` -> `AuthService.validateUser` (`denowatts-backend/src/auth/jwt.strategy.ts:53`).
 
@@ -68,7 +115,7 @@ Resolver: `denowatts-backend/src/users/users.resolver.ts`. Every operation runs 
 - No input. Return: `UserMentionResponse` = `{ _id, firstName, lastName }` (`dto/user.input.ts:52-53`).
 - Returns only `ACTIVE` users, scoped to the caller's company (unless SUPER_ADMIN). Powers @mention autocomplete in events/notifications.
 
-## Services
+## Services {dev}
 
 ### UsersService — `denowatts-backend/src/users/users.service.ts`
 
@@ -133,7 +180,7 @@ Logic, in order:
 - `query = { status: ACTIVE }`. If caller is not SUPER_ADMIN, force `query.company = currentUser.company` (throwing `BadRequestException('Company is required')` if absent).
 - DB read: `userModel.find(query).select('_id firstName lastName').lean()` (`.lean()` -> plain objects, faster for read-only autocomplete).
 
-## Schemas
+## Schemas {dev}
 
 ### User — `denowatts-backend/src/users/schemas/user.schema.ts`
 Dual-purpose class: `@ObjectType()` (GraphQL) + `@Schema({ timestamps: true, strict: true })` (Mongoose). `timestamps:true` auto-manages `createdAt`/`updatedAt`. Collection: `users`.
@@ -164,7 +211,7 @@ Indexes:
 
 Exported types: `UserDocument = HydratedDocument<User>`, `UserSchema`, `UserReference = Types.ObjectId | User` (`user.schema.ts:111-113`).
 
-## DTOs — `denowatts-backend/src/users/dto/user.input.ts`
+## DTOs — `denowatts-backend/src/users/dto/user.input.ts` {dev}
 
 All four input/response types are derived from the `User` schema class via GraphQL mapped types (`PickType`/`OmitType`/`PartialType`), so field-level validators (`@IsEmail`, `@IsString`, `@IsEnum`, `@MaxLength(20)`, etc.) are inherited from `user.schema.ts`.
 
@@ -217,7 +264,7 @@ All four input/response types are derived from the `User` schema class via Graph
 - **ManagersResponse** — `PickType(User, ['_id','firstName','lastName','company'])` (`dto/user.input.ts:49-50`). Returned by `getManagers`.
 - **UserMentionResponse** — `PickType(User, ['_id','firstName','lastName'])` (`dto/user.input.ts:52-53`). Returned by `getUsersForMentions`.
 
-## Business rules
+## Business rules (cited) {dev}
 - Only `SUPER_ADMIN` can call `createUser` — `@Roles(UserType.SUPER_ADMIN)` on the resolver, enforced by `RolesGuard` — `users.resolver.ts:19`, `common/guards/roles.guard.ts:34-40`.
 - All non-SUPER_ADMIN reads (`users`, and `findManagers`/`findForMentions`) are forced to the caller's own `company`; a non-SUPER_ADMIN with no company is rejected with `BadRequestException` on `find`/`findManagers`/`findForMentions` — `users.service.ts:31-36, 151-157, 174-179`.
 - A non-SUPER_ADMIN can set `status` only to `DELETED` (soft delete); any other status value is `Forbidden` — `users.service.ts:78-85`.
@@ -229,7 +276,7 @@ All four input/response types are derived from the `User` schema class via Graph
 - `email` is globally unique and lowercased; duplicate creates fail at the DB index — `user.schema.ts:38-41`.
 - Frontend gate: the Users Management route is wrapped in `ProtectedRoute` which redirects non-SuperAdmin to `/not-found` — `denowatts-portal/src/views/ProtectedRoute/ProtectedRoute.tsx`, `denowatts-portal/src/router.tsx:437-446`. (Backend still enforces scoping independently.)
 
-## Data touched
+## Data touched {dev}
 - `users` (collection) — created by `create`; updated by `update`/`updatePassword`; read by `find`/`findOne`/`getUserById`/`findManagers`/`findForMentions`.
 - `users.email` — unique, lowercased login key; written on create, read on every auth lookup.
 - `users.password` — argon2 hash, `select:false`; written only via `updatePassword` (or hashed input to `create` from auth).
@@ -239,7 +286,7 @@ All four input/response types are derived from the `User` schema class via Graph
 - `users.verificationAttempts` / `users.lastVerificationSent` — internal email-verification throttling fields (auth-managed; hidden from GraphQL).
 - `sites` (read via `SitesService.getSitesAccessCompanies`) — `accesses[].company` is read to expand the manager company pool in `findManagers` — `sites/services/sites.service.ts:787-802`.
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 - **`createUser` and `updateUser` do not hash `password`.** Both accept a `password` field (inherited from the schema) and write it verbatim. Only `updatePassword` (called by auth) hashes. Any new caller setting a password through these GraphQL ops would store plaintext — always route password changes through the auth flows. `users.service.ts:25-27, 118-121` vs `:126-136`.
 - **`lastName` nullability mismatch:** GraphQL field is non-nullable but the Mongo prop is not `required`. A user document missing `lastName` will cause a GraphQL non-null serialization error when read. The frontend defensively does `${firstName} ${lastName || ''}` — `UsersManagementPage.tsx:505`. `user.schema.ts:51-54`.
 - **`findOne` does not throw when a non-SUPER_ADMIN has no company** (unlike `find`); it silently scopes on `company: undefined`, which can match documents whose `company` is unset. `users.service.ts:58-66`.
@@ -249,8 +296,21 @@ All four input/response types are derived from the `User` schema class via Graph
 - **`SYSTEM` user type** has no behavior branch in this module — treat it as a marker type only.
 - **`internal` flag on `find`** bypasses tenancy scoping but is unreachable from GraphQL; only backend-internal callers could use it. `users.service.ts:29-31`.
 
-**Related flows:**
-- `flows/authentication.md` — signup, login (incl. MD5->argon2 upgrade), email confirmation, forgot/reset/change password; all call into `UsersService`.
-- `flows/companies.md` — the `Company` entity referenced by `users.company`; multi-tenancy boundary and site-access companies used by `getManagers`.
-- `flows/settings.md` — the Settings menu/route shell that hosts the Users Management page.
-- `flows/events.md` / `flows/notification.md` — consumers of `getManagers` and `getUsersForMentions`.
+## Solar & platform terminology {dev}
+
+- **User type / role (`UserType`)** — `SUPER_ADMIN | ADMIN | USER | SYSTEM`; the coarse permission level checked by `RolesGuard` and the service's field-level authorization.
+- **Account status (`UserStatus`)** — the lifecycle: `PENDING` (unconfirmed) → `ACTIVE` (confirmed), plus `DELETED` (soft-removed).
+- **Company scoping (multi-tenancy)** — forcing `query.company = user.company` on every read/write for non-SuperAdmins. See [[companies]].
+- **Soft delete** — setting `status = DELETED` instead of removing the document; filtered out of manager lists and normal-token validation.
+- **Forbidden-field sets** — the per-role lists `updateUser` refuses: `type`/`company`/`email` on your own record, `company`/`status`/`email` on someone else's.
+- **Managers** — users eligible as site managers/owners; pooled from the owning company plus every company with site access (`getManagers`). See [[site]].
+- **Mentions** — the @mention autocomplete (`getUsersForMentions`): ACTIVE users in the caller's company. See [[events]] and [[notification]].
+- **argon2** — the password-hashing algorithm used by `updatePassword`; legacy MD5 hashes are upgraded to argon2 at login. See [[authentication]].
+- **JWT / `@CurrentUser()`** — the access token resolved by `JwtStrategy` into a `User` document injected into every resolver.
+- **Theme preference (`ThemePreference`)** — `SYSTEM | LIGHT | DARK` per-user portal theme; self-editable (not in any forbidden set).
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[authentication]] · [[companies]] · [[settings]] · [[events]] · [[notification]] · [[solar-glossary]]

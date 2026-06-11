@@ -1,12 +1,63 @@
+---
+title: Agenda (Job Scheduler)
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Agenda (Job Scheduler)
 
-**What it does (business):** Agenda is a MongoDB-backed background job scheduler (cron/queue) that runs the platform's deferred and recurring work without blocking GraphQL/REST requests. It is registered once at app boot as a global NestJS provider, persists all jobs as documents in a MongoDB collection (`agendaJobs`), and survives restarts because the schedule lives in the database rather than in memory. As of this codebase the **only** feature wired to Agenda is **scheduled report generation/emailing** — every active report template becomes one repeatable Agenda job that, when it fires, builds a fleet-summary Excel and emails it to recipients.
+**Agenda** is the platform's background job scheduler — the machinery that runs work on a timetable rather than in response to a user's click. Schedules are stored in the database rather than in memory, so they survive restarts, and a run missed while the platform was down is caught up afterwards. There is no user interface: nothing in the portal talks to Agenda directly.
 
-**Entry point(s):** Background service — no direct UI and no route. `AgendaService` starts on app boot (`OnModuleInit`) and stops on shutdown (`OnModuleDestroy`). Jobs are defined/scheduled indirectly from the report module (template create/update/delete and app bootstrap), never by a user request to an "agenda" endpoint.
+Today its single real job is **scheduled report delivery**: every active report template becomes one recurring job which, when it fires, builds that template's fleet summary (with an Excel attachment) and emails it to its recipients. A separate, lightweight in-process timer also refreshes the accounting-integration credentials every half hour — that one runs beside Agenda, not through it.
+
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what the scheduler is, what runs on it, and how scheduling behaves. *Developer* adds the service API, configuration, the complete job inventory with cron derivations, lifecycle helpers, file references, and a terminology primer.
+
+---
+
+## Why this matters
+
+Reports that arrive in inboxes "every morning" or "on the first of the month" only happen because something fires reliably on schedule. Agenda is that something: it decides when each scheduled report actually runs, how late it can be, what happens when the platform restarts mid-schedule, and why a disabled template quietly stops sending.
+
+---
+
+## What it runs today
+
+- **Scheduled report generation and email** — one recurring job per report template whose notifications are switched on. When it fires, the job re-checks that the template is still active and that today really is the right calendar day, works out which sites and recipients apply, builds the fleet summary (as an Excel attachment for fleet-type templates), and emails it with a "View Report" link. See [[report]].
+- **Immediate one-off runs** — the same job can be queued to run right away, used when a template is created or updated.
+- **Accounting-credential refresh** — a separate in-process timer (not an Agenda job) renews the QuickBooks integration's access token every 30 minutes so it never lapses.
+
+---
+
+## How scheduling behaves
+
+- Schedules come from each template's notification settings — daily, every Monday, first/last day of the month, or first/last day of the year — at a chosen hour and minute, **interpreted in UTC**.
+- Due jobs are picked up within about **30 seconds** of their scheduled time, and at most **10 jobs run at once** — to-the-second precision is not guaranteed.
+- Schedules persist in the database; after a restart, missed runs are caught up and future runs continue without re-setup.
+- The **staging environment never schedules or sends** — scheduling and email delivery are both short-circuited there.
+
+---
+
+## The rules that matter
+
+- **Disabling a template stops it cleanly** — even if the timer still fires, the job checks the template's active flag and does nothing.
+- **"Last day of the month" is handled correctly** — the timer deliberately fires on the 28th–31st and the job itself confirms today is truly the month's last day before running.
+- **A failed Excel build doesn't block the email** — the report email still goes out, just without the attachment.
+- **Failures are not auto-retried** — a failed run is recorded, and the next scheduled occurrence simply runs as normal.
+- **No recipients, no email** — if a template resolves to an empty recipient list, the run is a quiet no-op.
+
+---
+
+## Entry points {dev}
+
+Background service — no direct UI and no route. `AgendaService` starts on app boot (`OnModuleInit`) and stops on shutdown (`OnModuleDestroy`). Jobs are defined/scheduled indirectly from the report module (template create/update/delete and app bootstrap), never by a user request to an "agenda" endpoint.
 
 > **Scope note:** Agenda is one of **two** schedulers in this backend. The other is `@nestjs/schedule` (`ScheduleModule.forRoot()` in `denowatts-backend/src/app.module.ts:100`), which powers `@Cron`-decorated methods that run in-process and are **not** stored in `agendaJobs`. The single `@Cron` job found is documented under "Other schedulers" below so the job inventory is complete, but it does **not** go through `AgendaService`.
 
-## AgendaService API — `denowatts-backend/src/agenda/agenda.service.ts`
+---
+
+## AgendaService API — `denowatts-backend/src/agenda/agenda.service.ts` {dev}
 
 `AgendaService` is a thin wrapper around the `agenda` npm package (`agenda@^6.2.5`) using the `@agendajs/mongo-backend` driver (`@agendajs/mongo-backend@^4.0.2`). It is `@Injectable()` and lives in a `@Global()` module (`denowatts-backend/src/agenda/agenda.module.ts:4`), so any module can inject `AgendaService` without importing `AgendaModule`.
 
@@ -35,7 +86,7 @@ These are not defined on `AgendaService` but are the Agenda APIs actually exerci
 - **`.now(name, data)`** — queues a one-off job to run as soon as the worker picks it up (used for immediate/test runs). — `denowatts-backend/src/report/report.service.ts:331-333`
 - **`.cancel(query)`** — deletes matching job docs from `agendaJobs` (used to unschedule a template). — `denowatts-backend/src/report/report.service.ts:310-313`
 
-## Configuration
+## Configuration {dev}
 All Agenda config is in the constructor — `denowatts-backend/src/agenda/agenda.service.ts:12-19`:
 
 | Setting | Value | Where |
@@ -49,7 +100,7 @@ All Agenda config is in the constructor — `denowatts-backend/src/agenda/agenda
 
 No per-job concurrency/lock/priority overrides are set anywhere — only the global `maxConcurrency: 10`. Default Agenda lock/`lockLifetime` behavior applies (not configured in code).
 
-## Complete job inventory
+## Complete job inventory {dev}
 
 There is exactly **one Agenda job definition pattern**, instantiated **once per active report template** (the job NAME is the template's `_id`). So the number of live Agenda jobs equals the number of report templates with `notificationSettings.isActive === true`.
 
@@ -73,7 +124,7 @@ There is exactly **one Agenda job definition pattern**, instantiated **once per 
 
 > No other module in the backend calls `getAgenda()`, `.define()`, `.every()`, `.now()`, or `.schedule()`. Verified by grepping the entire `denowatts-backend/src/` tree. There are **no** rollup jobs, alarm-check jobs, or data-ingestion jobs running through Agenda — those, if scheduled at all, are not in this codebase's Agenda usage.
 
-## Job details
+## Job details {dev}
 
 ### `<reportTemplateId>` — scheduled report generation (the only real Agenda job)
 
@@ -102,7 +153,7 @@ There is exactly **one Agenda job definition pattern**, instantiated **once per 
 ### `<reportTemplateId>` — immediate one-off run (`.now()`)
 - Same handler as above; scheduled via `ReportService.queueReportForTemplate()` (`report.service.ts:322-335`). Used for immediate generation; calls `defineJobForTemplate` first so the handler exists, then `getAgenda().now(name, { reportTemplateId })`.
 
-## Lifecycle helpers (report module → Agenda)
+## Lifecycle helpers (report module → Agenda) {dev}
 
 | Method | Agenda call | Purpose | file:line |
 |---|---|---|---|
@@ -112,7 +163,7 @@ There is exactly **one Agenda job definition pattern**, instantiated **once per 
 | `removePendingJobsForTemplate` | delegates to `removeRepeatableReportForTemplate` | Cleanup on delete | `report.service.ts:338-341` |
 | `defineJobForTemplate` | `define(name, handler)` | Register handler (idempotent) | `report.processor.ts:84-102` |
 
-## Other schedulers (NOT Agenda — listed for completeness)
+## Other schedulers (NOT Agenda — listed for completeness) {dev}
 
 | Job | Schedule | What it does | Mechanism | file:line |
 |---|---|---|---|---|
@@ -120,7 +171,7 @@ There is exactly **one Agenda job definition pattern**, instantiated **once per 
 
 `ScheduleModule` is registered both globally (`denowatts-backend/src/app.module.ts:100`) and in the QuickBooks module (`denowatts-backend/src/shared/quickbooks/quickbook.module.ts:14`). No `@Interval` or `@Timeout` decorators exist in the backend. Despite the backend `CLAUDE.md` mentioning "Redis + BullMQ", **no BullMQ queues, `@Processor`, or workers were found** in `denowatts-backend/src/` — the actual job queue in use is Agenda. (The report types file at `report-service.types.ts:8` still has stale "Bull job payload" / "serializes to Redis" comments left over from a prior Bull implementation; the runtime is Agenda.)
 
-## Business rules
+## Business rules (cited) {dev}
 - **Job name = template `_id`.** Each template gets its own Agenda document so cancel/reschedule is per-template and idempotent — `denowatts-backend/src/report/report.processor.ts:38`.
 - **Handlers are in-memory; schedules are persisted.** On restart, `onApplicationBootstrap` re-`define`s handlers for active templates but never re-`every`s, relying on the persisted `agendaJobs` docs — `denowatts-backend/src/report/services/report-template.service.ts:104-119`.
 - **Staging never schedules or sends.** `NODE_ENV === "staging"` short-circuits scheduling, immediate queueing, and email send — `report.service.ts:270-275`, `report.service.ts:323-328`, `report.processor.ts:601-606`.
@@ -128,7 +179,7 @@ There is exactly **one Agenda job definition pattern**, instantiated **once per 
 - **`LAST_DAY_OF_MONTH` deliberately over-fires** (`28-31`) and depends on the in-handler day check to run only on the true last day — `report.service.ts:94-95`, `report.service.ts:152-155`.
 - **Update always removes then re-adds** the schedule (no in-place edit) — `report-template.service.ts:314-320`.
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 - **Concurrency:** global cap is `maxConcurrency: 10` (`agenda.service.ts:18`); there is no per-job concurrency or priority. With many templates due at the same UTC minute, runs are throttled to 10 at a time.
 - **Poll latency:** `processEvery: "30 seconds"` means a job can run up to ~30 s after its cron time; sub-minute precision is not guaranteed.
 - **Missed runs (downtime):** because schedules live in MongoDB, a job whose cron time passed while the app was down will be picked up on next poll after restart (standard Agenda catch-up). Handlers are re-registered at boot so existing docs are processable.
@@ -139,4 +190,23 @@ There is exactly **one Agenda job definition pattern**, instantiated **once per 
 - **`MONGO_URI` is required at boot** (`getOrThrow`) — a missing value crashes the app before Agenda can start (`agenda.service.ts:14`).
 - **Stale Bull/Redis comments:** the codebase still carries comments referencing Bull/Redis (`report-service.types.ts:8-10`); the live implementation is Agenda over MongoDB. Trust the code, not those comments.
 
-**Related flows:** [report.md](./report.md) (the sole consumer — template CRUD, scheduling lifecycle, Excel/fleet-summary generation), [data-out.md](./data-out.md) (`sitedailyrollups` and other rollup collections the report job reads), [notification.md](./notification.md) (SendGrid email delivery the job triggers), [webhooks.md](./webhooks.md) (other async/integration entry points).
+## Solar & platform terminology {dev}
+
+- **Agenda** — the MongoDB-backed job-scheduler library (`agenda@^6.2.5` with `@agendajs/mongo-backend`); the platform's actual job queue (despite stale Bull/Redis comments in the code).
+- **Job document** — one persisted entry in the `agendaJobs` collection holding a job's name, data, schedule, and run/lock state.
+- **Cron expression** — the five-field schedule string (`m h dom mon dow`) derived from a template's notification settings, interpreted in UTC.
+- **Repeatable vs one-off job** — `.every(cron, name, data, { skipImmediate: true })` creates the recurring doc; `.now(name, data)` queues an immediate single run.
+- **Handler vs schedule** — the handler (`.define()`) is in-memory and must be re-registered at every boot; the schedule persists in MongoDB and survives restarts.
+- **Report template** — the per-template configuration (frequency, hour/minute, recipients, metrics) whose `_id` is also the Agenda job name. See [[report]].
+- **Fleet summary** — the multi-site report the job builds (Excel via `buildFleetExcelBuffer`, data via `getFleetSummaryNew` over `sitedailyrollups`).
+- **`processEvery` / `maxConcurrency`** — the 30-second poll interval and the global cap of 10 concurrent jobs.
+- **Day guard** — the in-handler `isScheduleDueOnDay` re-check that makes the deliberately over-firing `LAST_DAY_OF_MONTH` cron (28–31) run only on the true last day.
+- **Staging guard** — the `NODE_ENV === "staging"` short-circuit that prevents scheduling, queueing, and email sending in staging.
+- **SendGrid** — the email provider used for delivery (`sendEmailWithTemplate`). See [[notification]].
+- **QuickBooks token refresh** — the separate `@nestjs/schedule` `@Cron` timer (every 30 minutes) refreshing the accounting integration's OAuth token; not an Agenda job.
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[report]] · [[data-out]] · [[notification]] · [[webhooks]] · [[solar-glossary]]

@@ -1,16 +1,78 @@
+---
+title: Alarm Config
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Alarm Config
 
-**What it does (business):** Defines the catalog of global alarm *rules* (one `AlarmConfig` document per rule) that describe what conditions should raise an alarm across the entire fleet — e.g. "channel disconnected", "site metric above a threshold". Each rule carries a target, an effect, a severity (CRITICAL / HIGH / ROUTINE), the channel prefixes / metric it applies to, a comparison operator + threshold, a suppression level, and an optional delay / condition. These rules are authored centrally by Super Admins and are then referenced by alarm *events* (`Event.alarmConfig`) and by the webhook notification pipeline that emails / notifies recipients when an alarm opens or closes.
+An **alarm rule** describes a condition that should raise an alarm anywhere in the fleet — "a sensor went silent", "an inverter is reporting an abnormal value", "a site metric crossed a threshold". The Alarm Config module is the central catalog of those rules: each one names what it watches, how bad it is (Critical / High / Routine), the threshold it compares against, and whether Denowatts support should be copied when it fires. Platform administrators author the rules once, and every open alarm across every site is then counted and rolled up by rule on the portfolio dashboard.
 
-> **Important scope note (verified against code):** The `alarm-config` module itself is **pure CRUD + a reporting aggregation**. It does **not** evaluate metric values against thresholds and does **not** create alarm events. No code in `denowatts-backend/src` reads `AlarmConfig.threshold`, `operator`, `suppressionLevel`, `delay`, or `condition` to decide whether to fire an alarm. Events already arrive with `isAlarm`, `severity`, and `alarmConfig` pre-set (by an upstream data-processing pipeline that lives outside this repository / outside the searched `src` tree). This module is the **definition store and status dashboard** for those rules, plus the notification fan-out in `webhooks`. Everywhere below that this matters is flagged.
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what alarm rules are, what they contain, where they're actually evaluated, and the rules that govern them. *Developer* adds the full GraphQL surface, the service and aggregation internals, every schema and DTO shape, file references, and a solar-terminology primer.
 
-**Entry point(s):**
+---
+
+## Why this matters
+
+Alarms are how the platform tells you something is wrong before the monthly report does. The rule catalog decides what counts as "wrong", how urgent it is, and — through severity — who gets emailed or pinged when an alarm opens or closes. A badly tuned rule either floods inboxes or stays silent while a site loses production. The portfolio dashboard's open-alarm summary is read directly off this catalog.
+
+---
+
+## What an alarm rule contains
+
+Each rule in the catalog has:
+
+- **A name** — must be unique across the whole catalog.
+- **A target** — what it watches: a site-level metric, a metric on matching equipment channels, or a channel's connection status.
+- **An effect** — the failure being described: *unavailable*, *disconnected*, or *value abnormal*.
+- **A severity** — **Critical**, **High**, or **Routine**. The severity is stamped onto every alarm the rule produces and drives the colors on the dashboard and the notification routing.
+- **A comparison** — an operator (greater than / less than / equal) and a threshold number.
+- **A suppression level (1–5)** — intended to dampen noisy, flapping alarms.
+- **An optional delay and condition** — e.g. only alarm when the sun is actually up ("irradiance above 100 W/m²").
+- **A support flag** — when set, Denowatts support is copied on the alarm emails.
+
+---
+
+## Where the rules are evaluated (important)
+
+This platform **stores and displays** the rules — it does not run them. The actual threshold checking happens in an upstream data-processing pipeline outside this codebase: alarms arrive here already flagged with their severity and a reference back to the rule that produced them. What the platform itself does with the catalog is: let administrators edit it, count and roll up open alarms per rule for the portfolio dashboard, and use the rule's name and support flag when sending alarm notifications. Exactly where the upstream evaluation runs is not yet confirmed and is flagged for human review.
+
+---
+
+## Who can do what
+
+- **Platform administrators (Super Admins)** are the only ones who can create, edit, reorder, or delete rules.
+- **Every signed-in user** can view the rule catalog (read-only) and the open-alarm summary, scoped to their own company's sites.
+- Super Admins can view the open-alarm summary fleet-wide or filtered to any company; everyone else is locked to their own company.
+
+---
+
+## The rules that matter
+
+- **Rules are global.** There is one catalog for the entire fleet — the same rules apply to every company and every site.
+- **Rule names must be unique.**
+- **Deleting a rule does not clean up its alarms.** Existing alarm events keep pointing at the deleted rule; they simply vanish from the per-rule rollup.
+- **The open-alarm rollup counts only genuinely open alarms** — not closed, not deleted, not archived, and not group parents — and tracks how many of them are still unacknowledged.
+- **Support is only auto-copied in production** when a rule's support flag is on (in test environments support is always copied).
+- **Suppression level is limited to 1–5 and the condition to two presets** in the editing screen, even though the underlying storage is more permissive.
+
+---
+
+## Entry points {dev}
 - **Authoring UI** — Settings gear → "Global Alarm Configuration" — `denowatts-portal/src/pages/dashboard/settings/global-alarm/GlobalAlarmPage.tsx` at route `/settings/global-alarm-configuration` (registered in `denowatts-portal/src/router.tsx:458-464`).
 - **Consumer UI (status dashboard)** — Portfolio page open-alarm summary table — `denowatts-portal/src/pages/dashboard/portfolio/components/OpenAlarmStatusSummaryTable.tsx` (fed by the `alarmStatusSummary` query inside `PORTFOLIO_PAGE_DATA`, `denowatts-portal/src/graphql/queries/portfolioQueries.ts`).
 
 ---
 
-## Alarm types & severity levels
+## Scope note (verified against code) {dev}
+
+> **Important scope note (verified against code):** The `alarm-config` module itself is **pure CRUD + a reporting aggregation**. It does **not** evaluate metric values against thresholds and does **not** create alarm events. No code in `denowatts-backend/src` reads `AlarmConfig.threshold`, `operator`, `suppressionLevel`, `delay`, or `condition` to decide whether to fire an alarm. Events already arrive with `isAlarm`, `severity`, and `alarmConfig` pre-set (by an upstream data-processing pipeline that lives outside this repository / outside the searched `src` tree). This module is the **definition store and status dashboard** for those rules, plus the notification fan-out in `webhooks`. Everywhere below that this matters is flagged.
+
+---
+
+## Alarm types & severity levels {dev}
 
 All enums live in `denowatts-backend/src/alarm-config/schemas/alarm-config.schema.ts:6-33` and are registered with GraphQL.
 
@@ -52,7 +114,7 @@ All enums live in `denowatts-backend/src/alarm-config/schemas/alarm-config.schem
 
 ---
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 All operations are defined in `denowatts-backend/src/alarm-config/alarm-config.resolver.ts`. The resolver class is decorated `@Roles(UserType.SUPER_ADMIN)` (`resolver.ts:14`), so **every operation defaults to Super-Admin-only** unless individually re-opened with `@AllRoles()`. The `@AllRoles()` decorator short-circuits the guard to allow any authenticated user (`denowatts-backend/src/common/guards/roles.guard.ts:18-25`); Super Admin always passes (`roles.guard.ts:34`).
 
@@ -97,7 +159,7 @@ All operations are defined in `denowatts-backend/src/alarm-config/alarm-config.r
 
 ---
 
-## Services
+## Services {dev}
 
 ### AlarmConfigService — `denowatts-backend/src/alarm-config/alarm-config.service.ts`
 
@@ -172,7 +234,7 @@ This is the open-alarm rollup powering the portfolio dashboard.
 
 ---
 
-## Schemas
+## Schemas {dev}
 
 ### AlarmConfig — `denowatts-backend/src/alarm-config/schemas/alarm-config.schema.ts`
 `@Schema({ timestamps: true, versionKey: false })` → adds `createdAt`/`updatedAt`, drops `__v`. Mongoose collection: `alarmconfigs`.
@@ -214,7 +276,7 @@ The fields the `alarmStatusSummary` aggregation and the webhook dispatcher rely 
 
 ---
 
-## DTOs
+## DTOs {dev}
 
 ### CreateAlarmConfigInput — `denowatts-backend/src/alarm-config/dto/alarm-config.input.ts:7-8`
 `OmitType(AlarmConfig, ['_id'], InputType)` → **every `AlarmConfig` field except `_id`**, with the same `class-validator` rules declared on the schema class (`@IsNotEmpty`, `@IsString`, `@IsNumber`, `@IsBoolean`, `@IsOptional`, etc.). Required: `name`, `target`, `effect`, `severity`, `channelPrefixes`, `operator`, `threshold`, `suppressionLevel`. Optional: `metric`, `isAcknowledgeable`, `delay`, `condition`, `order`, `notifySupport`.
@@ -247,7 +309,7 @@ The fields the `alarmStatusSummary` aggregation and the webhook dispatcher rely 
 
 ---
 
-## Alarm evaluation logic
+## Alarm evaluation logic {dev}
 
 Two distinct concerns, both *outside* the CRUD service:
 
@@ -272,7 +334,7 @@ Triggered by `POST /webhooks/event/process-alarm` (`webhook.controller.ts:38-42`
 
 ---
 
-## Business rules
+## Business rules (cited) {dev}
 - Alarm configs are **global**, not per-company; `findAll` never filters by company, it only gates non-super-admins who lack a company — `alarm-config.service.ts:26-31`.
 - **Authoring is Super-Admin-only.** Resolver class is `@Roles(SUPER_ADMIN)` (`alarm-config.resolver.ts:14`); only `alarmConfigs` and `alarmStatusSummary` are re-opened to all roles via `@AllRoles()` (`resolver.ts:19`, `:59`). Frontend mirrors this: `useGlobalAlarmAccess.ts:13-15` sets `canManageAlarmConfigs = isSuperAdmin`; non-super-admins get a read-only table.
 - **`name` must be unique** — DB unique index (`schema.ts:45`) + in-batch dedupe check in `bulkUpdate` (`service.ts:54-58`) + frontend pre-checks on add/duplicate (`GlobalAlarmPage.tsx:94-97`, `AlarmConfigTable.tsx:293-296`).
@@ -283,7 +345,7 @@ Triggered by `POST /webhooks/event/process-alarm` (`webhook.controller.ts:38-42`
 - **Support email only fires in production and only when `notifySupport` is true** — `webhook.service.ts:196-198`.
 - New-alarm defaults from the UI: `target=CHANNEL_METRIC`, `effect=DISCONNECTED`, `severity=CRITICAL`, `channelPrefixes=['1.1.1']`, `operator=EQUAL`, `metric=''`, `threshold=0`, `suppressionLevel=1`, `notifySupport=false` (`GlobalAlarmPage.tsx:114-125`).
 
-## Data touched
+## Data touched {dev}
 - `alarmconfigs.*` — full CRUD; the rule catalog. Created/updated/deleted by the service; read (sorted by `order`) by `findAll`, `findOne`, `getAlarmStatusSummary` — `alarm-config.service.ts`.
 - `alarmconfigs.name` — unique index; uniqueness enforced on create/bulk-update.
 - `alarmconfigs.order` — drives every sort and the drag-reorder bulk save.
@@ -291,7 +353,7 @@ Triggered by `POST /webhooks/event/process-alarm` (`webhook.controller.ts:38-42`
 - `sites._id` — read via `SitesService.getAllSites` to scope the status rollup to a company.
 - `companies.notificationSettings` + `users.email` — read by webhook `processAlarm` to resolve alarm notification recipients.
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 - **No referential cleanup on delete.** Deleting an `AlarmConfig` leaves `Event.alarmConfig` pointers dangling; those events simply stop appearing in `alarmStatusSummary` (their `$lookup` join no longer matches a config). — `alarm-config.service.ts:48-50`.
 - **`create` does not catch duplicate-name errors**, but `bulkUpdate` does — a single create with a colliding `name` returns a raw Mongo `E11000` error to the client; a bulk update returns a friendly `BadRequestException`. — `service.ts:37-39` vs `:69-74`.
 - **`_id` is passed inside the bulk update body.** Harmless (Mongo ignores `_id` mutation), but means the entire row object — including `__typename` if the frontend forgets to strip it — is sent as the update doc. The frontend spreads `...config` directly (`GlobalAlarmPage.tsx:159`).
@@ -302,10 +364,25 @@ Triggered by `POST /webhooks/event/process-alarm` (`webhook.controller.ts:38-42`
 - **Route is not wrapped in `ProtectedRoute`.** Unlike sibling Super-Admin settings routes, `/settings/global-alarm-configuration` (`router.tsx:458-464`) has no route-level guard; access control is entirely in-page (`useGlobalAlarmAccess` → read-only table + hidden Add/Save buttons) and on the backend resolver. A non-super-admin can reach the page but cannot mutate.
 - **`alarmConfig(_id)` and `deleteAlarmConfig` advertise non-null `AlarmConfig`** in the schema but the service can return `null` (not found) — a bad id resolves to `null` against a non-null field, which Apollo will surface as a GraphQL non-null violation error.
 
-**Related flows:**
-- `flows/events.md` — alarm events (`Event.alarmConfig`, `isAlarm`, severity, acknowledgement) that these rules categorize.
-- `flows/notification.md` — per-company notification settings and the recipient-resolution logic used by webhook `processAlarm`.
-- `flows/status.md` — site/portfolio status surfaces that display alarm counts.
-- `flows/portfolio.md` — the portfolio page that renders `alarmStatusSummary` via `OpenAlarmStatusSummaryTable`.
-- `flows/settings.md` — Settings menu that hosts the Global Alarm Configuration page.
-- `flows/solar-glossary.md` — terminology (irradiance, metrics) referenced by alarm conditions like `irr>100 w/m2`.
+---
+
+## Solar & platform terminology {dev}
+
+- **Alarm rule (`AlarmConfig`)** — one catalog entry describing an alarm-worthy condition: target + effect + severity + operator/threshold + suppression/delay/condition.
+- **Target** — what the rule watches: `SITE_METRIC` (site-level value), `CHANNEL_METRIC` (a metric on matching channels), or `CHANNEL_STATUS` (connection state).
+- **Effect** — the failure described: `UNAVAILABLE`, `DISCONNECTED`, or `VALUE_ABNORMAL`.
+- **Severity** — `CRITICAL / HIGH / ROUTINE`; copied onto every alarm event the rule produces and used as the key into company notification settings.
+- **Channel prefix** — the 5-character dotted code (e.g. `1.1.1`) identifying a device type; rules use prefixes to say which equipment they apply to. See [[channels]] and [[device-types]].
+- **Threshold / operator** — the comparison (`>`, `<`, `=`) and value a rule describes; evaluated upstream, not in this codebase.
+- **Suppression level** — a 1–5 de-bounce setting intended to dampen flapping alarms; stored here, consumed upstream.
+- **Condition** — an optional gate such as `irr>100 w/m2` (only alarm when irradiance exceeds 100 watts per square metre, i.e. daytime).
+- **Open alarm** — an alarm event with no end date; the rollup counts open alarms and how many remain unacknowledged.
+- **Alarm group** — a parent event bundling related child alarms; group parents are excluded from the rollup. See [[events]].
+- **`notifySupport`** — the per-rule flag that CCs Denowatts support on alarm emails (production only); consumed by the [[webhooks]] dispatch.
+- **Irradiance** — the solar power falling on a surface (W/m²), the platform's core measured resource.
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[events]] · [[notification]] · [[webhooks]] · [[status]] · [[portfolio]] · [[settings]] · [[channels]] · [[solar-glossary]]

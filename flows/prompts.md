@@ -1,10 +1,66 @@
+---
+title: Prompts
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Prompts
 
-**What it does (business):** The `prompts` module is a **CRUD log/feedback store for AI chat interactions** — it persists a record per AI exchange (the user's `input` text, the assistant's `output` text, when each happened) and captures user feedback on that exchange (`rating`, `reaction` of LIKE/DISLIKE/NONE), grouped by an optional `sessionId` and attributed to the authenticated user via `createdBy`. It is a **plain Mongoose-backed GraphQL CRUD module**: it does **not** itself call any LLM/AI provider. The actual LLM work in this backend lives in a completely separate, unrelated module (`src/shared/openai/`, OpenAI GPT-4o/GPT-4.1) used by sites/channels — see "AI integration details" for the distinction. The frontend has no hand-written consumer yet; the GraphQL operations exist only as auto-generated types.
+**Prompts** is a feedback store for AI chat exchanges. Each record holds one question-and-answer pair — what was asked, what came back, and when each happened — plus the user's feedback on that exchange: a numeric rating and a like/dislike reaction, optionally grouped into a conversation session, and attributed to the signed-in user who created it.
 
-**Entry point(s):** None in the live UI yet. The portal does not contain any hand-written query/mutation, hook, or component that calls these operations. The only frontend artifacts are the **auto-generated** types in `denowatts-portal/src/graphql/__generated__/graphql.ts` (`CreatePromptInput`, `UpdatePromptInput`, `Prompt`, `Reaction`, `MutationCreatePromptArgs`, `MutationUpdatePromptArgs`, ~lines 1475, 4239, 5035, 6852). This means the schema is published to the GraphQL endpoint and codegen picks it up, but no React code invokes it. (Likely an in-progress AI-chat / "ask Denowatts" feedback feature — flag for human confirmation.)
+It is groundwork for an AI-assistant feature: the storage and API are complete on the backend, but the feature is **not yet surfaced in the portal** — there is no screen that uses it. Just as importantly, this module does **not** call any AI itself; it only stores and retrieves these records.
 
-## GraphQL API surface
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what a record holds, what the module does and doesn't do, and the rules around it. *Developer* adds the full GraphQL surface, service internals, the schema and DTO shapes, the distinction from the platform's real AI integration, file references, and a terminology primer.
+
+---
+
+## Why this matters
+
+When an AI assistant answers users' questions, the only way to know whether the answers are any good is to keep the exchanges and let users rate them. This store is built to capture exactly that: the question, the answer, and the human verdict — the raw material for judging and improving an assistant over time.
+
+---
+
+## What a record holds
+
+- The **question** text and the moment it was asked (both required).
+- The **answer** text and the moment it arrived (optional — a record can exist before an answer does).
+- A numeric **rating** and a **reaction** — like, dislike, or none (the default).
+- An optional **session** identifier grouping the exchanges of one conversation.
+- **Who created it** — recorded automatically from the signed-in user, never supplied by the client.
+
+---
+
+## What it does *not* do
+
+This module never calls an AI provider — no question is generated or answered here. The platform's actual AI features (extracting energy models from PDFs, explaining inverter fault codes in plain language) live in a separate part of the backend and do not use this store at all.
+
+---
+
+## Who can do what
+
+Any signed-in user — regardless of role — can create records, edit them, and list them. There is no per-role restriction, and notably **no ownership check**: any signed-in user can edit any record, not just their own. Whether that's intended is not yet confirmed.
+
+---
+
+## The rules that matter
+
+- The question text and its timestamp are required; everything else is optional.
+- The reaction defaults to "none" when not given.
+- The creator is always taken from the signed-in user and never changes afterwards.
+- Lists come back newest-question-first, can be filtered to one user's records, and support a case-insensitive text search across both question and answer.
+- Editing a record that doesn't exist returns a clear "not found" error.
+
+---
+
+## Entry points {dev}
+
+None in the live UI yet. The portal does not contain any hand-written query/mutation, hook, or component that calls these operations. The only frontend artifacts are the **auto-generated** types in `denowatts-portal/src/graphql/__generated__/graphql.ts` (`CreatePromptInput`, `UpdatePromptInput`, `Prompt`, `Reaction`, `MutationCreatePromptArgs`, `MutationUpdatePromptArgs`, ~lines 1475, 4239, 5035, 6852). This means the schema is published to the GraphQL endpoint and codegen picks it up, but no React code invokes it. (Likely an in-progress AI-chat / "ask Denowatts" feedback feature — flag for human confirmation.)
+
+---
+
+## GraphQL API surface {dev}
 
 All three operations are defined in `denowatts-backend/src/prompts/prompts.resolver.ts`. The resolver is `@Resolver(() => Prompt)`.
 
@@ -56,7 +112,7 @@ All three operations are defined in `denowatts-backend/src/prompts/prompts.resol
   - **`PromptPaginate`** = `OmitType(Prompt, ['createdBy'])` + a replaced `createdBy: PromptUserResponse` (`dto/prompt.input.ts:76-80`). So each doc has all `Prompt` scalar fields plus a **populated** `createdBy` user object instead of a raw ObjectId.
   - **`PromptUserResponse`** (`dto/prompt.input.ts:62-75`): `_id: ID`, `firstName?: String`, `lastName?: String`, `email?: String`.
 
-## Services
+## Services {dev}
 
 ### PromptsService — `denowatts-backend/src/prompts/prompts.service.ts`
 Injects the Mongoose model as `Model<PromptDocument> & PaginateModel<PromptDocument>` (`prompts.service.ts:12-15`). Pagination works because `mongoose-paginate-v2` is registered as a **global connection plugin** in `denowatts-backend/src/app.module.ts:110` — it is not applied per-schema in the prompts module. Has a private `Logger` named `PromptsService`. All three methods wrap their body in try/catch and on error: `logger.error(...)`, `Sentry.captureException(error)`, then rethrow.
@@ -86,7 +142,7 @@ Injects the Mongoose model as `Model<PromptDocument> & PaginateModel<PromptDocum
 - **Side effects:** none.
 - **Throws:** logs + Sentry + rethrow on any error.
 
-## Schemas
+## Schemas {dev}
 
 ### Prompt — `denowatts-backend/src/prompts/schemas/prompt.schema.ts`
 Dual-purpose class: `@ObjectType()` (GraphQL) + `@Schema({ timestamps: true })` (Mongo). Collection: `prompts` (Mongoose default pluralization). `PromptDocument = HydratedDocument<Prompt>`.
@@ -110,7 +166,7 @@ Dual-purpose class: `@ObjectType()` (GraphQL) + `@Schema({ timestamps: true })` 
 ### Reaction enum — `prompt.schema.ts:7-13`
 GraphQL enum (registered via `registerEnumType`, name `Reaction`). Values: `LIKE = 'LIKE'`, `DISLIKE = 'DISLIKE'`, `NONE = 'NONE'`. Schema/DB default = `NONE`.
 
-## DTOs
+## DTOs {dev}
 
 All in `denowatts-backend/src/prompts/dto/prompt.input.ts`. Most are derived from `Prompt` via NestJS mapped-type helpers (`OmitType`/`PickType`/`PartialType`/`IntersectionType`), so field types/validation are inherited from the schema unless noted.
 
@@ -141,14 +197,14 @@ Standalone `@InputType` (not derived).
 ### PaginatedPrompts — `prompt.input.ts:82-86`
 `@ObjectType` = `PaginateType(PromptPaginate)` with `docs: [PromptPaginate]` re-declared. Return type of the `prompts` query.
 
-## Module wiring
+## Module wiring {dev}
 
 ### PromptsModule — `denowatts-backend/src/prompts/prompts.module.ts`
 - `imports`: `MongooseModule.forFeature([{ Prompt → PromptSchema }, { User → UserSchema }])`. (User schema imported so the `createdBy` populate/ref resolves.)
 - `providers`: `PromptsService`, `PromptsResolver`.
 - `exports`: `PromptsService` (so other modules could reuse it; no current consumer was found importing it).
 
-## AI integration details
+## AI integration details {dev}
 
 **This module makes no LLM/AI calls.** Confirmed: no `openai`/`anthropic`/`claude`/`gpt`/`langchain` import or usage anywhere under `src/prompts/`. The schema's `input`/`output`/`reaction`/`rating` fields strongly imply it is meant to **log and collect feedback on** AI chat exchanges, but the generation itself is not done here.
 
@@ -160,7 +216,7 @@ The backend's actual LLM integration is **separate and unrelated to this module*
 
 **Note for verification:** the LLM provider here is **OpenAI (GPT-4o / GPT-4.1), not Claude/Anthropic.** The `prompts` module documented here does not call any provider at all.
 
-## Business rules
+## Business rules (cited) {dev}
 - Authentication required for all operations; no role restriction (any authenticated `UserType`) — global `JwtAuthGuard` + `RolesGuard` with no `@Public()`/`@Roles()` on the resolver — `denowatts-backend/src/prompts/prompts.resolver.ts`, `denowatts-backend/src/app.module.ts:178-185`, `denowatts-backend/src/common/guards/roles.guard.ts:23-25`.
 - `createdBy` is server-assigned from the JWT user on create, never from client input, and is never changed on update — `prompts.resolver.ts:18-19`, `prompts.service.ts:17-23`.
 - `reaction` defaults to `NONE` when omitted — `prompt.schema.ts:64,69`.
@@ -169,12 +225,12 @@ The backend's actual LLM integration is **separate and unrelated to this module*
 - List is always sorted newest-input-first (`inputAt: -1`); `search` matches `input` OR `output` case-insensitively; `createdBy` filters to one user — `prompts.service.ts:54-68`.
 - Listed prompts return the creator as a trimmed user object (`_id, firstName, lastName, email`) via populate — `prompts.service.ts:74-77`.
 
-## Data touched
+## Data touched {dev}
 - `prompts` collection (created by this module) — full lifecycle (insert on create, `$set` on update, paginated reads). Fields: `input`, `inputAt`, `output`, `outputAt`, `rating`, `sessionId`, `reaction`, `createdBy`, `createdAt`, `updatedAt` — `prompt.schema.ts`.
 - `prompts.createdBy` → ref to `users` collection; read-only join via populate selecting `_id firstName lastName email` — `prompts.service.ts:74-77`, `prompts.module.ts:12`.
 - Indexes maintained: `{ createdBy: 1 }`, `{ inputAt: -1 }` — `prompt.schema.ts:94-95`.
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 - **No frontend consumer.** Nothing in the portal calls these operations (only auto-generated types exist). The feature is plumbed end-to-end on the backend and published in the GraphQL schema but appears unused / in-progress. Flag for human confirmation of intended UI.
 - **Misnomer risk vs. AI prompts.** Despite the name, this is a generic input/output/feedback log; the real LLM (OpenAI) lives in `src/shared/openai/` and does not touch this collection.
 - **`create` does not await `save()` inside its try/catch** (`prompts.service.ts:23` returns the promise), so a rejected save is propagated to the caller but bypasses this method's Sentry/logger handling. Synchronous constructor/validation errors are caught; async persistence errors are not. (Flag for human review.)
@@ -183,4 +239,21 @@ The backend's actual LLM integration is **separate and unrelated to this module*
 - **`rating` is GraphQL `Int` in the generated types but stored/validated as `Number`** (`@IsNumber`, Mongo `Number`) — non-integer ratings would pass DB validation but the published GraphQL `Int` field constrains client input to integers.
 - **`createPrompt` does not validate that `outputAt >= inputAt`** or that `output`/`outputAt` are set together — no cross-field validation exists.
 
-**Related flows:** [users.md](users.md) (`createdBy` ref + `PromptUserResponse` shape, JWT `@CurrentUser`), [authentication.md](authentication.md) (global `JwtAuthGuard`/`RolesGuard` behavior). No AI-feature flow doc currently exists for the OpenAI integration in `src/shared/openai/` (sites PDF extraction / channel status description) — candidate for a future doc.
+## Solar & platform terminology {dev}
+
+- **Prompt (record)** — one document in the `prompts` collection: a question/answer pair plus feedback metadata. Despite the name, it holds the whole exchange, not just the question.
+- **`input` / `inputAt`** — the question text and its timestamp; the only required fields, and `inputAt: -1` is the default list sort.
+- **`output` / `outputAt`** — the answer text and its timestamp; both optional, with no cross-field validation against `inputAt`.
+- **Reaction** — the `LIKE` / `DISLIKE` / `NONE` enum; DB default `NONE`.
+- **Rating** — a numeric score (`GraphQL Int`, Mongo `Number`).
+- **Session (`sessionId`)** — an optional free-string identifier grouping the exchanges of one conversation.
+- **`createdBy`** — ObjectId ref to `users`, injected server-side from `@CurrentUser()`; populated to `{ _id, firstName, lastName, email }` in list results.
+- **PaginatedPrompts** — the `mongoose-paginate-v2` envelope (`docs`, `totalDocs`, `page`, `hasNextPage`, …) returned by the `prompts` query.
+- **OpenAIService** — the platform's *actual* LLM integration (`src/shared/openai/`, GPT-4o / GPT-4.1), used by sites and channels; entirely separate from this module.
+- **Codegen artifacts** — the auto-generated TypeScript types in the portal's `__generated__/graphql.ts`; the only frontend trace of this feature today.
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[users]] · [[authentication]] · [[solar-glossary]]

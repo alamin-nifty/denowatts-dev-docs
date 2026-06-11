@@ -1,11 +1,70 @@
+---
+title: Webhooks
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Webhooks
 
-**What it does (business):** The webhooks module is the backend's **inbound REST integration surface** — the only place the otherwise GraphQL-first backend exposes plain HTTP `POST` endpoints to external systems. It receives webhooks from **HubSpot** (the CRM) to keep portal `Site` and `Company` records in sync with CRM deals/quotes, and it receives an **alarm-processing** webhook (from the internal alarm/event detection pipeline) that fans a triggered alarm event out into **email notifications** (via SendGrid) and **in-app notification records** for the right users. It also wraps the HubSpot CRM API (`HubSpotService`) for use by this and other modules.
+Webhooks are the platform's **incoming integration doors** — a small set of endpoints that outside systems call to push work in, rather than a screen people use. Two outside callers use them today: **HubSpot**, the company's CRM, which keeps the platform's company and site records in sync with what sales sets up in the CRM; and the internal **alarm pipeline**, which pokes the platform whenever an alarm opens or closes so the right people get emailed and see a bell notification.
 
-**Entry point(s):** All endpoints are mounted under the REST prefix `webhook` and are guarded by a shared-secret bearer guard. There is **no frontend UI** for this module — a `grep` for "webhook" across `denowatts-portal/src/` returns zero matches. Callers are HubSpot workflows and the internal alarm pipeline, not the portal.
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what the integrations do and the rules that govern them. *Developer* adds every REST endpoint, the guard and service internals, the full alarm-dispatch walkthrough, schema/DTO shapes, file references, and a solar-terminology primer. There is no portal UI for this module — it is machine-to-machine only.
+
+---
+
+## Why this matters
+
+These endpoints are the glue between sales and operations. When a deal closes in the CRM, the site and company appear in the platform automatically — nobody re-types them. And when monitoring detects a problem, this is the doorway through which an alarm becomes an email in an inbox and a notification in the app. If the CRM sync misfires you get duplicate or orphaned records; if alarm dispatch misfires, nobody hears about an outage.
+
+---
+
+## CRM sync (HubSpot)
+
+When a site or company is created or updated in HubSpot, HubSpot calls the platform:
+
+- **New site** — the platform creates the site record, looks up its street address to pin it on the map, links it to its owner company (if that company is already known to the platform), and writes the new platform record's id back into HubSpot so the two systems stay cross-linked.
+- **New company** — the platform creates the company (including billing details and verified email domain) and likewise writes its id back to HubSpot.
+- **Updates** — site ownership and company name/billing details can be updated from the CRM side; billing fields that aren't supplied keep their existing values.
+- **Quote emails** — the CRM can also ask the platform to email a deal's primary contact a link to their quote. See [[quote]].
+
+If a site or company with the same name already exists, the platform treats the request as already done rather than creating a duplicate.
+
+---
+
+## Alarm notifications
+
+When the monitoring pipeline opens or closes an alarm, it calls the alarm-dispatch endpoint with the alarm's id. The platform then:
+
+1. Looks up the alarm and its site.
+2. Finds every company connected to the site (the owner plus any companies with shared access).
+3. Reads each company's **notification settings** for the alarm's severity (Critical / High / Routine) to decide who should hear about it — the site's managers and/or a hand-picked list of users — and by which channel (email, in-app bell, or both). See [[notification]] and [[settings]].
+4. Sends a "New Alarm" or "Closed Alarm" email (closed-alarm emails include how long the alarm lasted) and creates an in-app notification for each in-app recipient, deep-linking to the event.
+5. Optionally copies Denowatts support, when the alarm's rule asks for it. See [[alarm-config]].
+
+Only standalone alarms are dispatched — alarms bundled into a group are suppressed so people aren't flooded by one incident.
+
+---
+
+## The rules that matter
+
+- **Every call must present a shared secret** — there is no user login on these endpoints; callers authenticate with a pre-agreed token.
+- **Creating a site or company is idempotent by name** — calling twice doesn't create duplicates.
+- **Only active, non-deleted users are ever notified.**
+- **Notification settings gate everything** — if no company has an active setting matching the alarm's severity, nobody (except possibly support) is notified.
+- **The endpoints never report hard failures to the caller** — problems are logged internally and the caller always gets a polite answer, so a failed sync can look successful from the CRM side.
+
+---
+
+## Entry points {dev}
+
+All endpoints are mounted under the REST prefix `webhook` and are guarded by a shared-secret bearer guard. There is **no frontend UI** for this module — a `grep` for "webhook" across `denowatts-portal/src/` returns zero matches. Callers are HubSpot workflows and the internal alarm pipeline, not the portal.
 - Controller: `denowatts-backend/src/webhooks/webhook.controller.ts`
 
-## Webhook flows overview
+---
+
+## Webhook flows overview {dev}
 
 This module mixes **two unrelated inbound concerns** behind one controller:
 
@@ -14,7 +73,7 @@ This module mixes **two unrelated inbound concerns** behind one controller:
 
 `HubSpotService` is also exported and reused outside this module (`exports: [HubSpotService, WebhookService]` in `webhook.module.ts`).
 
-## API surface (REST endpoints)
+## API surface (REST endpoints) {dev}
 
 All routes live in `denowatts-backend/src/webhooks/webhook.controller.ts`. Every handler is decorated `@HttpCode(HttpStatus.OK)` (returns `200` even on the create endpoints), is `@Public()` (skips the normal JWT auth), and the whole controller is `@UseGuards(WebhookGuard)` (shared-secret bearer instead — see [Auth](#auth--webhookguard)).
 
@@ -36,7 +95,7 @@ Note: `WebhookUpdateCompanyDto` is the only handler with controller-level logic 
 - Header that does not exactly equal `` `Bearer ${WEBHOOK_SECRET}` `` → `401 UnauthorizedException('Invalid authorization header')` (`webhook.guard.ts:26-28`).
 - `WEBHOOK_SECRET` is a required env var, validated in `denowatts-backend/src/config/env.validation.ts:22`.
 
-## Services
+## Services {dev}
 
 ### WebhookService — `denowatts-backend/src/webhooks/webhook.service.ts`
 
@@ -116,7 +175,7 @@ Thin wrapper over `@hubspot/api-client` (CRM) plus a raw `HttpService` for file 
 
 HubSpot object types referenced by `WebhookService`: `"p_sites"` (custom object), `"companies"`, `"deals"`, `"contacts"`. Custom properties written: `site_portal_id`, `company_portal_id`. Association type read: `"site_owner"`.
 
-## Schemas
+## Schemas {dev}
 
 This module defines **no schemas of its own**. It reads/writes schemas owned by other modules. The relevant ones:
 
@@ -163,7 +222,7 @@ Only `notifySupport` (boolean, default `false`, `:135`) is consumed by `processA
 ### Site / SiteAccess (read by `processAlarm` + `createSite`) — `site.schema.ts`, `site-access.schema.ts`
 From `Site`: `owner?` (Company ref, `:488`), `accesses?: SiteAccess[]` (`:571`), `managers?: [ObjectId → User]` (`:611`), `timezone?` (`:557`, default fallback `"America/New_York"`), `name`, `serviceStatus`. `SiteAccess` (`site-access.schema.ts:10-23`): `company: ObjectId → Company` (required), `companyName: string` (required).
 
-## DTOs
+## DTOs {dev}
 
 All in `denowatts-backend/src/webhooks/dto/webhook-site.dto.ts`. Validated by the global `ValidationPipe` (class-validator decorators).
 
@@ -212,7 +271,7 @@ All in `denowatts-backend/src/webhooks/dto/webhook-site.dto.ts`. Validated by th
 |---|---|---|---|
 | `dealId` | number | `@IsNumber()` | HubSpot deal id |
 
-## Alarm dispatch flow (detailed)
+## Alarm dispatch flow (detailed) {dev}
 
 End-to-end path for `POST /webhook/event/process-alarm` (`webhook.service.ts:422-581`). Trigger: the internal alarm-detection pipeline `POST`s `{ _id, description? }` for an event it has flagged as an alarm.
 
@@ -249,7 +308,7 @@ End-to-end path for `POST /webhook/event/process-alarm` (`webhook.service.ts:422
     - Both pass `description: dto.description || event.description` and the analytics `link`. Email send is fire-and-forget (`sendEmailWithTemplate` returns `void`, internally `.catch`es). (`email.service.ts:55-104`)
 13. **Return** `"An email has been sent successfully!"`. Any thrown error in the whole method → `this.logger.error(...)` + Sentry + return `"Failed to process alarm notification"`. (`:572-580`)
 
-## Business rules
+## Business rules (cited) {dev}
 - Webhook endpoints require a shared-secret bearer token, not JWT — `webhook.guard.ts:26`.
 - All handlers return HTTP `200` and never surface exceptions to the caller; failures are swallowed to Sentry and returned as `{success:false}`/error strings — `webhook.service.ts` (every method's catch block).
 - Create-site / create-company are **idempotent by name**: an existing match returns `success:true` with an "already exists" message instead of duplicating — `webhook.service.ts:220-225`, `380-385`.
@@ -262,7 +321,7 @@ End-to-end path for `POST /webhook/event/process-alarm` (`webhook.service.ts:422
 - In-app alarm notifications hardcode `metadata.senderName = "Trinity Trinity"` — `webhook.service.ts:499` **(bug/placeholder — flag for review).**
 - Every alarm email is BCC'd to the hardcoded `asayeed@denowatts.com` — `webhook.service.ts:517` **(flag for review).**
 
-## Data touched
+## Data touched {dev}
 - `sites` (read by name, read by id, **create**, **update owner/coordinates**) — site sync from HubSpot + read in alarm dispatch — `sites.service.ts` via `WebhookService`.
 - `sites.location.coordinates` — written as `[lng, lat]` from Google Maps geocoding — `webhook.service.ts:253`.
 - `sites.owner` — set from HubSpot `site_owner` association's `company_portal_id` — `webhook.service.ts:280-287`.
@@ -276,7 +335,7 @@ End-to-end path for `POST /webhook/event/process-alarm` (`webhook.service.ts:422
 - Google Maps geocoding API — read coordinates for new site addresses — `webhook.service.ts:249`.
 - SendGrid — outbound alarm + quote emails (templates `d-6e3654…`, `d-7d9200…`, `d-16d32f…`) — `email.service.ts`.
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 - **`processAlarm` returns the same shape (`string`) on success and on swallowed error** — callers can't reliably distinguish `"No recipients found"` / `"Failed to process alarm notification"` from success without string matching.
 - **`inAppNotificationType` last-wins:** if multiple companies match different `type`s (shouldn't normally happen since type = severity), the in-app notification `type` is overwritten per-company — `webhook.service.ts:157`.
 - **Fire-and-forget writes:** `notificationService.createMany` (no `await`, no `.catch`) and `emailService.sendEmailWithTemplate` (returns `void`) — failures in these do not affect the returned status string and are only visible via internal logging/Sentry.
@@ -287,10 +346,25 @@ End-to-end path for `POST /webhook/event/process-alarm` (`webhook.service.ts:422
 - **`WebhookGuard` does constant-time-unsafe string equality** on the bearer token (`!==`) — minor, but worth noting for a secret-comparison path — `webhook.guard.ts:26`.
 - **`webhook.service.spec.ts` tests re-implemented helper functions, not the real service.** The spec re-declares local copies (`buildNotificationRecipients`, `validateSiteData`, etc.) that **do not match the current production logic** (e.g. it models a `SiteNotificationMethod.EMAIL_SITE_MANAGERS` channel and a `notification.emails` array that the real `processAlarm` no longer uses — the real code uses per-company `notificationSettings`). These tests give a false sense of coverage; flag for human review.
 
-**Related flows:**
-- [notification.md](./notification.md) — in-app + email notification delivery (this module is one of the producers of `Notification` records).
-- [events.md](./events.md) — the `Event` model and alarm/event lifecycle that triggers `process-alarm`.
-- [site.md](./site.md) — `Site`, `accesses`, `managers`, `owner` consumed here.
-- [settings.md](./settings.md) — where per-company `notificationSettings` (the alarm recipient rules) are configured.
-- [quote.md](./quote.md) — order/quote flow related to the `email-quote` webhook (`/order/<dealId>`).
-- _No `alarm-config.md` exists yet_ — the `AlarmConfig.notifySupport` rule consumed here should be cross-linked once that doc is written.
+---
+
+## Solar & platform terminology {dev}
+
+- **Webhook** — an HTTP endpoint an external system calls to push an occurrence into the platform; here the only REST surface in an otherwise GraphQL backend.
+- **HubSpot** — the CRM; site/company records originate there and are mirrored into the portal via these endpoints, cross-linked by `site_portal_id` / `company_portal_id` custom properties.
+- **Shared-secret bearer guard** — auth model for these endpoints: `Authorization: Bearer <WEBHOOK_SECRET>` instead of a user JWT.
+- **Alarm dispatch** — the `process-alarm` flow that turns an opened/closed alarm event into SendGrid emails and in-app `Notification` documents.
+- **Alarm event** — an `Event` with `isAlarm: true` and a severity, produced by the upstream monitoring pipeline and classified by an [[alarm-config]] rule.
+- **Alarm group** — a parent bundling related alarms; grouped alarms are *not* dispatched individually. See [[events]].
+- **Severity** — `CRITICAL / HIGH / ROUTINE`; the key matched against each company's `notificationSettings.type` to resolve recipients.
+- **Notification settings** — the per-company rules (site managers / other users, email / in-app, active flag) that gate alarm delivery. See [[notification]].
+- **Site managers / accesses / owner** — the site's people and companies: the owner company plus access companies are all considered when resolving recipients. See [[site]].
+- **`notifySupport`** — the alarm rule flag that CCs `support@denowatts.com` (production only; always CC'd in non-production).
+- **SendGrid** — the transactional email provider; alarm and quote emails use dynamic templates.
+- **Geocoding** — translating a new site's street address into map coordinates via Google Maps at create time.
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[notification]] · [[events]] · [[alarm-config]] · [[site]] · [[companies]] · [[settings]] · [[quote]] · [[solar-glossary]]

@@ -1,8 +1,64 @@
+---
+title: Storage (File Storage)
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Storage (File Storage)
 
-**What it does (business):** The storage module manages all file upload, retrieval, organisation, and deletion for the platform using AWS S3 as the sole storage backend. It serves two distinct use cases: the Denobox file browser (per-site structured document store with virtual folders, drag-and-drop moves, note metadata, and optional event/email side-effects on upload) and a set of internal helpers used by other modules (events, channels, quotes, sites) to stage, move, copy, and download files programmatically.
+Every site on the platform has its own private file area — the **Denobox** — where teams keep the documents and images that belong to that site: plans, models, admin paperwork, reports, installation photos, capacity-test files, and security-camera snapshots. The storage module is the engine behind it: it handles uploading, browsing, searching, annotating, moving, and deleting those files, and it also quietly serves every other part of the product that needs to store or fetch a file (event attachments, channel photos, quote documents).
 
-**Entry point(s):**
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains the Denobox file area, what you can do with files, and the rules that keep them organised. *Developer* adds the S3 key layout, every REST and GraphQL operation, the service internals, DTOs, file-cleanup behaviour, known gotchas, and a terminology primer.
+
+---
+
+## Why this matters
+
+Files are the paper trail of a solar site — the as-built plans, the energy model, the commissioning photos, the signed reports. Keeping them scoped per site, organised into predictable folders, and accessible only through short-lived secure links means the right people can always find the right document, and nobody outside the site's company stumbles into it. Several automated behaviours (event-log entries, support emails, photo cleanup) also hang off file activity, so the file store doubles as part of the site's activity record.
+
+---
+
+## The Denobox file area
+
+- Each site gets its own file space, organised into five standard folders that are always present: **Admin**, **Plans**, **Model**, **Reports**, and **Photos**.
+- Sub-folders are *virtual* — there is no "create folder" button; a folder comes into existence the moment a file is placed inside it, and disappears when empty.
+- Every file can carry a free-text **note**, and the search box matches against both file names and notes (case-insensitive, anywhere in the text).
+- Files download through short-lived secure links (valid for one hour), generated fresh each time — files are not served from permanent public addresses in the browser flow.
+
+---
+
+## What you can do with files
+
+- **Upload** a file into a site's Denobox (optionally into a folder). Spaces in names are tidied up automatically, and photo formats from iPhones (HEIC/HEIF) are converted before upload.
+- **Browse and search** the site's files, folders first, with notes shown alongside.
+- **Annotate** a file with a note, editable at any time.
+- **Move** a file between folders by drag-and-drop.
+- **Delete** a file (with a confirmation prompt). If the deleted file was referenced as a channel installation photo, that reference is automatically cleaned up so the channel doesn't show a broken image.
+- Uploads and deletions in the four document folders (Admin, Plans, Model, Reports) automatically create an entry in the site's event log, and uploads can also notify the support team by email — so document changes are visible in the site's history. See [[events]].
+
+---
+
+## Security cameras
+
+Sites with a security camera push their snapshots directly into the site's Photos folder, machine-to-machine (authenticated with a shared device secret, not a user login). Each new capture **replaces** the previous one — the platform keeps a single latest image per camera, which is surfaced on the site overview page. See [[site]].
+
+---
+
+## The rules that matter
+
+- **Files are scoped per site** — every Denobox path lives under that site's own area, and browsing requires a valid signed-in session.
+- **Download links expire after one hour** and are regenerated on each view.
+- **The five standard folders always appear**, even when empty.
+- **Only the four document folders trigger event-log entries** — the Photos folder does not.
+- **One security-camera image per device** — old captures are deleted when a new one arrives.
+- **Deleting a file also cleans up channel photo references** that pointed at it.
+- A folder listing covers up to 1,000 files; behaviour beyond that is a known limitation (see developer notes).
+
+---
+
+## Entry points {dev}
 - Denobox browser UI: `/site/:siteId/denobox` — `denowatts-portal/src/pages/dashboard/site/denobox/DenoboxPage.tsx`
 - Field-setup image upload: `denowatts-portal/src/pages/dashboard/field-setup/components/ImageUpload.tsx`
 - Event file upload: inside `EditEventForm` / `SimpleEventModal` components
@@ -10,7 +66,7 @@
 
 ---
 
-## Storage provider
+## Storage provider {dev}
 
 **AWS S3** only — no GCS or local disk.
 
@@ -38,7 +94,7 @@ S3 client is initialised in `StorageService` constructor with `maxAttempts: 3` a
 
 ---
 
-## REST endpoints
+## REST endpoints {dev}
 
 All four REST endpoints are on the `StorageController` (`@Controller('storage')`) mounted under the base path configured by the NestJS app. Uploads use `multipart/form-data` with the field name `file`.
 
@@ -76,7 +132,7 @@ All four REST endpoints are on the `StorageController` (`@Controller('storage')`
 
 ---
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 Defined in `StorageResolver` — `denowatts-backend/src/storage/storage.resolver.ts`.
 
@@ -184,7 +240,7 @@ mutation DeleteDenoboxFile($deleteDenoboxFileInput: DeleteDenoboxFileInput!): St
 
 ---
 
-## Services
+## Services {dev}
 
 ### StorageService — `storage.service.ts`
 
@@ -411,7 +467,7 @@ Injected into `StorageService`. Provides a single method to keep Channel image r
 
 ---
 
-## DTOs
+## DTOs {dev}
 
 ### `FindDenoboxFilesFilter` (GraphQL InputType) — `dto/denobox-file.input.ts:7-17`
 
@@ -470,7 +526,7 @@ Note: `shouldCreateEvent` and `shouldSendEmail` use a `@Transform` decorator to 
 
 ---
 
-## GraphQL return type
+## GraphQL return type {dev}
 
 ### `DenoboxResponse` (ObjectType) — `dto/denobox-response.ts`
 
@@ -486,7 +542,7 @@ Note: `shouldCreateEvent` and `shouldSendEmail` use a `@Transform` decorator to 
 
 ---
 
-## Constants — `constants/index.ts`
+## Constants — `constants/index.ts` {dev}
 
 ```typescript
 export const DENOBOX_EVENT_FOLDERS = ['Admin', 'Plans', 'Model', 'Reports'];
@@ -496,7 +552,7 @@ These are the four folders that trigger automatic event log entries on both uplo
 
 ---
 
-## Business rules
+## Business rules (cited) {dev}
 
 - **Spaces in uploaded filenames are replaced with underscores** before building the S3 key on denobox uploads — `storage.service.ts:122`.
 - **Filename sanitization (`sanitizeFilename`)** replaces any character not matching `[a-zA-Z0-9.-_\s]` with `-`, then collapses consecutive whitespace to `-` — `common/utils/string.ts:22`. Used for event and generic upload temp keys.
@@ -514,7 +570,7 @@ These are the four folders that trigger automatic event log entries on both uplo
 
 ---
 
-## Data touched
+## Data touched {dev}
 
 | Collection | Operation | When | Context |
 |---|---|---|---|
@@ -528,7 +584,7 @@ No storage-specific MongoDB schema is defined in this module. `Site` and `Channe
 
 ---
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 
 - **S3 `ListObjectsV2` max 1,000 keys**: If a site has more than 1,000 files in a folder, the listing is silently truncated. No pagination or `ContinuationToken` handling exists — `storage.service.ts:273`.
 - **`updateDenoboxFile` self-copy race**: The S3 CopyObject-onto-self pattern requires the object to exist. If the file was deleted between the UI load and the save, this will silently succeed (S3 will create a new zero-byte object at the key) or fail with a `NoSuchKey` error depending on timing.
@@ -543,8 +599,22 @@ No storage-specific MongoDB schema is defined in this module. `Site` and `Channe
 
 ---
 
-**Related flows:**
-- [Events](events.md) — uses `uploadEventFile`, `moveEventFile`, `copyFile`
-- [Field Setup](field-setup.md) — uses `POST /storage/denobox/upload` for channel photos
-- [Site](site.md) — `getLatestSecurityCameraImage` surfaces on site overview
-- [Channels](channels.md) — `getDownloadUrl` for photo display; `FileCleanupService` on delete
+## Solar & platform terminology {dev}
+
+- **Denobox** — both the physical on-site data-acquisition gateway and, in this module, the per-site file area named after it (`denobox/<siteId>/` on S3).
+- **Virtual folder** — a folder that exists only as a path prefix on S3 object keys; there is no folder object or folder-creation API.
+- **Default folders** — the five always-present root folders: Admin, Plans, Model, Reports, Photos. Only the first four trigger event-log entries.
+- **Presigned URL** — a time-limited (1-hour default) signed S3 download link; how all browser-facing downloads are served.
+- **Note (metadata)** — a free-text annotation stored as S3 user metadata on the object; searchable alongside the filename.
+- **Temp staging** — the `<folder>/temp/` upload pattern: files land in a temp path first, then a service call moves them to a permanent entity path once the owning record (event, quote) is created.
+- **Token** — the key fragment returned by the event-upload endpoint; the caller hands it back later so the staged file can be moved next to its event.
+- **Security camera capture** — a machine-to-machine snapshot push into the site's Photos folder, authenticated by a shared secret header; single latest image per device.
+- **FileCleanup** — the service that nulls out `Channel.images` references when the underlying Denobox file is deleted, preventing broken photo links. See [[channels]].
+- **HEIC/HEIF → WebP conversion** — client-side conversion of Apple photo formats before upload so files render in any browser.
+- **ACL (`public-read`)** — an S3 object permission; set on moves/copies but not on the original Denobox upload, a known inconsistency flagged in the developer notes.
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[events]] · [[field-setup]] · [[site]] · [[channels]] · [[quote]] · [[solar-glossary]]

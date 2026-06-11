@@ -1,12 +1,56 @@
+---
+title: Activity Logs (Audit Trail)
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Activity Logs (Audit Trail)
 
-**What it does (business):** A system-wide, write-once audit trail. Every create / update / delete that goes through a Mongoose model on the main DB connection is automatically recorded as an `ActivityLog` document capturing *who* did it, *what* collection and document were touched, the request *payload*, and a structured *diff* of the change (with previous values). Only Super Admins can read the trail, through a paginated, filterable settings page.
+Denowatts keeps a permanent **audit trail**: every time a record anywhere in the platform is created, changed, or deleted, an entry is written automatically capturing who did it, what was touched, and the before-and-after values. Nobody has to remember to log anything — recording happens as a side effect of the change itself — and entries can never be edited or removed through the application.
 
-**Entry point(s):**
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what the trail records, who can read it, and its limits. *Developer* adds the database-plugin mechanics, every hook, the GraphQL surface, schema and DTO shapes, file references, and a terminology primer.
+
+## Why this matters
+
+When a site's configuration suddenly looks wrong, an alarm threshold changed, or a user account disappeared, the trail answers "who changed this, when, and what did it look like before?" It is the platform's accountability and forensics layer — used for support, debugging, and compliance alike.
+
+## What gets recorded
+
+Every create, update, and delete across the platform produces one entry with:
+
+- **Who** — the signed-in user who made the change; automatic or background work shows as **"System"**.
+- **What** — the kind of record (users, sites, channels, companies, …) and the specific record affected.
+- **The action** — create, update, or delete.
+- **The request** that drove the change — with any passwords masked before storage.
+- **A structured diff** — what was added, removed, or changed, including the previous values.
+- **When** it happened.
+
+A few things are deliberately or currently *not* recorded: routine login-token refreshes, saves that change nothing, and bulk operations (see the rules below).
+
+## Who can see it
+
+Only **SuperAdmins** can read the trail, through Settings → Activity Logs. No one — at any level — can write, edit, or delete entries through the application.
+
+## Finding things in the trail
+
+The page is filterable and searchable: filter by record type, by action (create/update/delete), and by date range, or free-text search by a person's name or email, a site name, a device serial number, or a company name. Results are newest-first by default, and a date range includes the whole end day.
+
+## The rules that matter
+
+- **Append-only.** Entries can only be read; there is no way to alter or remove them through the application.
+- **Automatic and platform-wide** — logging is built into the data layer, not opted into feature by feature.
+- **Passwords are always masked** before an entry is stored.
+- **Login-token refreshes are never logged** (they would flood the trail with noise).
+- **Bulk operations are not currently audited** — a change applied to many records at once produces no entries.
+- **No export** — the trail is view-and-filter on screen only; there is no download/CSV.
+
+## Entry points {dev}
 - **Reading (UI):** Settings gear menu → "Activity Logs" → route `/settings/activity-logs` — `denowatts-portal/src/pages/dashboard/settings/activity-logs/ActivityLogsPage.tsx`. Super-Admin-gated by `ProtectedRoute` — `denowatts-portal/src/views/ProtectedRoute/ProtectedRoute.tsx:27-32`.
 - **Writing (no UI, fully automatic):** A global Mongoose connection plugin installs save/update/delete hooks on every schema. There is **no producing endpoint, decorator, or interceptor and no service call to write a log** — entries are a side effect of ordinary Mongoose writes. Installed at `denowatts-backend/src/app.module.ts:112` (`connection.plugin(ActivityLogService.apply)`).
 
-## What gets logged (producer map)
+## What gets logged (producer map) {dev}
 
 There is exactly **one producer**: the Mongoose connection plugin `ActivityLogService.apply`, registered globally in the `connectionFactory` of `MongooseModule.forRootAsync` at `denowatts-backend/src/app.module.ts:105-116`. Because it is registered with `connection.plugin(...)`, it is applied to **every schema on that connection** — i.e. effectively every collection in the app (users, sites, channels, assets, companies, settings, etc.). No individual service calls the activity-log service to record an action; grep for `ActivityLogService` outside the module returns only this single `app.module.ts` registration line.
 
@@ -37,7 +81,7 @@ The plugin (`ActivityLogService.apply`, `denowatts-backend/src/activity-logs/act
 
 **Hook coverage gotcha:** only the per-document Mongoose middleware listed above is hooked. Operations that bypass these (raw `bulkWrite`, `updateMany`, `aggregate` `$merge`, direct driver calls) write to the DB without producing an `ActivityLog`.
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 Both operations are **queries** (read-only). There are no mutations — the trail is never written or edited through GraphQL. The whole resolver class is guarded `@Roles(UserType.SUPER_ADMIN)` (`denowatts-backend/src/activity-logs/activity-logs.resolver.ts:11`), enforced by `RolesGuard` (`denowatts-backend/src/common/guards/roles.guard.ts`).
 
@@ -53,7 +97,7 @@ Both operations are **queries** (read-only). There are no mutations — the trai
 - **Input** — none.
 - **Return** — sorted list of distinct, non-empty `target` (collection) names present in the trail. Used to populate the "Filter by Collection" dropdown in the UI.
 
-## Services
+## Services {dev}
 
 ### ActivityLogService — `activity-logs.service.ts`
 
@@ -139,7 +183,7 @@ Builds the Mongo query from the filter and returns a paginated result (via `mong
 - Filters out null/empty values and sorts ascending.
 - On error: logs, `Sentry.captureException`, re-throws.
 
-## Schemas
+## Schemas {dev}
 
 ### ActivityLog — `schemas/activity-logs.schema.ts`
 `@Schema({ timestamps: true })` (so `createdAt` / `updatedAt` are auto-managed). Stored in the `activitylogs` collection. No explicit `@Prop` indexes are declared on this schema.
@@ -160,7 +204,7 @@ Builds the Mongo query from the filter and returns a paginated result (via `mong
 
 The GraphQL `user` field is an `ID` (the raw ObjectId). `paginateActivityLogs` populates `user` with `firstName lastName email` server-side, but since the GraphQL field type is `ID` the frontend instead maps user details client-side from a separate `GET_USERS` query (`ActivityLogsPage.tsx:31-38, 169-187`).
 
-## DTOs
+## DTOs {dev}
 
 ### ActivityLogPaginateFilterInput — `dto/activity-log.input.ts:13-53`
 `@InputType()`. All fields optional.
@@ -182,7 +226,7 @@ The GraphQL `user` field is an `ID` (the raw ObjectId). `paginateActivityLogs` p
 ### LogActionType (enum) — `activity-logs.service.ts:27-31`
 `CREATE | UPDATE | DELETE`. Registered as a GraphQL enum via `registerEnumType` (`dto/activity-log.input.ts:8-11`).
 
-## Business rules
+## Business rules (cited) {dev}
 - **Read access is Super-Admin only** — backend: `@Roles(UserType.SUPER_ADMIN)` on the resolver (`activity-logs.resolver.ts:11`) enforced by `RolesGuard` (`common/guards/roles.guard.ts`); frontend: `ProtectedRoute` redirects non-SuperAdmins to `/not-found` (`ProtectedRoute.tsx:27-32`).
 - **The trail is append-only via GraphQL** — only queries exist; no mutation can create/edit/delete logs (`activity-logs.resolver.ts`).
 - **Logging is automatic, not opt-in** — every per-document save/update/delete on the main connection is audited because the plugin is global (`app.module.ts:112`).
@@ -193,7 +237,7 @@ The GraphQL `user` field is an `ID` (the raw ObjectId). `paginateActivityLogs` p
 - **End-date is inclusive to end of day** — `endDate` is bumped to `23:59:59.999` (`activity-logs.service.ts:447-449`).
 - **Default ordering is newest-first** — `createdAt: -1` when no sort given (`activity-logs.service.ts:461-463`).
 
-## Data touched
+## Data touched {dev}
 - `activitylogs.{target, action, user, documentId, payload, changes, before, createdAt, updatedAt}` — written by `createLog`; read/paginated by `paginateActivityLogs`; distinct `target` read by `getDistinctTargets`.
 - `users.{_id, firstName, lastName, email}` — read in `paginateActivityLogs` to resolve `search` to user ids and to `populate` the `user` field (`activity-logs.service.ts:359-364, 473-478`).
 - `sites.{_id, name}` — read in search resolution (`:373-383`).
@@ -202,7 +246,7 @@ The GraphQL `user` field is an `ID` (the raw ObjectId). `paginateActivityLogs` p
 - `companies.{_id, name}` — read in search resolution (`:420-430`).
 - Every other collection on the connection is **read** in `preSchema` (projected `findOne` of changed fields) and indirectly is the *source* of audited writes, but the activity-log module never writes to them.
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 - **Bulk ops aren't audited.** Only single-document hooks are registered; `updateMany`, `deleteMany`, `insertMany`, raw `bulkWrite`, and aggregation writes produce no log (`activity-logs.service.ts:230-302`).
 - **Static state is shared across requests.** `previousData` / `updatedObject` are process-global statics, so concurrent writes can theoretically cross-contaminate a log's `before`/`changes` (`activity-logs.service.ts:36-38`).
 - **`user` field is just an ObjectId in GraphQL.** Server-side populate is overridden by the `ID` field type; the page resolves names via a separate `GET_USERS` call and shows the raw id (or "System") if the user can't be found (`ActivityLogsPage.tsx:169-187`).
@@ -213,8 +257,22 @@ The GraphQL `user` field is an `ID` (the raw ObjectId). `paginateActivityLogs` p
 - **No export.** Despite an older catalog entry listing "Export logs", there is no export/download/CSV code in the page or settings component (verified by grep) — the page is view + filter only.
 - **`required` vs `null` mismatch** for `payload`/`changes` (see schema note) — `changes` is technically written as `diffObject ?? null` against a `required: true` field.
 
-**Related flows:**
-- [flows/authentication.md](authentication.md) — supplies `req.user` (the audit actor) and the `refreshTokenInput` that is deliberately excluded.
-- [flows/users.md](users.md) — `User` model, `UserType.SUPER_ADMIN`, and the user-search lookup used by `paginateActivityLogs`.
-- [flows/settings.md](settings.md) — the Settings menu that hosts the Activity Logs page.
-- [flows/site.md](site.md), [channels.md](channels.md), [assets.md](assets.md), [companies.md](companies.md) — entities resolved during free-text search and the most common audited collections.
+## Solar & platform terminology {dev}
+
+- **Audit trail / activity log** — one append-only record per create/update/delete, stored in the `activitylogs` collection.
+- **Actor** — the `user` ObjectId on a log; `null` (rendered as **"System"**) when there is no request user (background jobs, seeds, unauthenticated writes).
+- **Target** — the collection name the audited action hit (e.g. `users`, `sites`, `channels`).
+- **Action (`LogActionType`)** — `CREATE | UPDATE | DELETE`.
+- **Diff (`changes`)** — the structured `{ added, deleted, updated }` object produced by `deep-object-diff`; `{ added }` for creates, `{ deleted }` for deletes.
+- **`before`** — the prior values of just the changed paths (UPDATE only), built by `getBeforeForUpdated` from the pre-hook snapshot.
+- **Payload** — the GraphQL variables (or REST body) that drove the change, with `password` fields redacted to `*****`.
+- **Mongoose connection plugin / hooks** — the producing mechanism: `connection.plugin(ActivityLogService.apply)` registers pre/post middleware on every schema; no service ever writes a log directly.
+- **Append-only** — only read queries exist in GraphQL; no mutation can create, edit, or delete a log entry.
+- **Redaction** — masking sensitive values before storage, plus skipping `refreshTokenInput` writes entirely.
+- **SuperAdmin (`SUPER_ADMIN`)** — the only role allowed to read the trail. See [[users]].
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[authentication]] · [[users]] · [[settings]] · [[site]] · [[channels]] · [[assets]] · [[companies]] · [[solar-glossary]]

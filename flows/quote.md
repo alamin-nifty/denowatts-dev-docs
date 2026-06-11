@@ -1,8 +1,83 @@
+---
+title: Quote / Proposal
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Quote / Proposal
 
-**What it does (business):** The Quote module is the sales and procurement workflow for DenoWatts hardware and monitoring services. A "quote" is a formal price proposal for outfitting a solar installation with Deno sensors, gateway hardware, and a multi-year monitoring subscription. Quotes move through a lifecycle from creation → admin review → DocuSeal e-signature → order placement (which creates a QuickBooks invoice) → hardware shipment. The module also handles subscription renewal quoting for existing sites, including a "group quote" concept that bundles multiple sites into a single signable document.
+A **quote** is a formal price proposal for outfitting a solar installation with Denowatts monitoring — the reference sensors, the on-site gateway hardware, optional extras (cellular connectivity, outdoor enclosure, capacity testing, VPN), and a multi-year monitoring subscription. The Quote module is the sales and procurement workflow around that proposal: building it (singly or in bulk), pricing it from the live product catalogue, walking it through review and e-signature, converting it into an order and invoice, and ultimately activating the site's subscription when hardware ships. It also handles subscription **renewals** for existing sites, including bundling many sites into one signable group quote.
 
-**Entry point(s):**
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains the quote lifecycle, how pricing works, renewals and group quotes, and who can do what. *Developer* adds the full GraphQL surface, service internals, schemas and enums, the SKU catalogue, frontend wizard details, file references, and a terminology primer.
+
+---
+
+## Why this matters
+
+The quote is where a prospect becomes a monitored site. The numbers on it drive the invoice, the hardware shipment, and the length of the monitoring subscription — so a mispriced or mis-specified quote follows the site for years. The module automates the error-prone parts: it works out which hardware and service products a site needs from a handful of facts (capacity, mounting, module type, service tier), pulls live prices from the accounting system, and enforces a one-way lifecycle so a signed quote can't quietly be edited backwards.
+
+---
+
+## The quote lifecycle
+
+A quote moves forward through fixed stages and never backwards:
+
+1. **Pending** — created and awaiting admin review (customers see this as "Quote in Review").
+2. **Requested for signing** — approved; the owner is emailed and can open the e-signature flow ("Waiting for Signing").
+3. **Signed** — the e-signature is complete ("Awaiting Order" until billing details arrive).
+4. **Ordered** — billing and shipping details are confirmed; an invoice is raised in the accounting system and a confirmation email goes out.
+5. **Shipped** — hardware is on its way. For a brand-new site, this is the moment the monitoring subscription is switched on (start date today, end date after the subscribed years).
+
+A quote can also be **withdrawn** (the one status change a customer can make themselves) or **deleted** (soft-delete, super-admin only — the record is kept but hidden). Quotes effectively expire 90 days after their last update; the expiry date shown in the UI is computed, not stored.
+
+---
+
+## What goes into a quote — pricing
+
+- The platform derives the **product list automatically** from the site's profile: capacity (MW AC), mounting types, module types (monofacial/bifacial), chosen service tier, subscription years, and add-ons (cell plan, outdoor enclosure, capacity testing, VPN, data-acquisition source).
+- **Quantities scale with site size** — bigger sites get more sensors and gateways, in defined capacity bands (under 1 MW up to 100 MW+).
+- **Prices are live**, fetched from the accounting/product system at quoting time rather than stored in the platform.
+- Totals are split into **hardware**, **one-time services**, **recurring services over the full term** (with the implied annual rate shown), plus shipping; all amounts are rounded to whole currency units.
+- One built-in promotion exists: the **Expert Optimization Guide is free with a 5-year subscription**.
+- Super-admins can add a **custom line item** with their own name, description, and price.
+- Quotes can carry attached documents; when a quote becomes an order, the order documents are also filed into the site's Denobox Plans folder. See [[storage]].
+
+---
+
+## Renewals and group quotes
+
+- For existing sites coming up on the end of their subscription, the renewal flow pre-fills a quote from what the site actually has — detecting which sensor types are installed and matching the service tier to the current plan.
+- Several sites can be renewed together as a **group quote**: one parent document that is signed once, with one child quote per site underneath. The parent carries the combined totals (and the summed capacity); the products live on the children.
+- Renewals always have **$0 shipping** (no new hardware by default), and a catalogue of add-on products (extra gateway, modem, data plan…) can be added manually.
+- One known blind spot: renewal pre-fill always assumes monofacial modules — bifacial detection for renewals is not implemented, so operators must adjust by hand where needed.
+
+---
+
+## Who can do what
+
+- **Quoting is open to ordinary users — even those not yet attached to a company.** A quote always has an owner; the owner's company (if any) is recorded on the quote, and a missing company is fine.
+- **Non-super-admins** see only quotes they own, created, or that belong to their company — and the only status change they can make is withdrawing a quote.
+- **Super-admins** see everything, can create quotes on behalf of any owner, manage all status transitions, add custom line items, export the quote list to Excel, and are the only ones who can delete quotes.
+- **Signing** is performed by the customer side (admin/user roles) — a super-admin cannot run the signing step on a customer's behalf.
+- Editing is locked for non-super-admins while a quote is in review or awaiting signature.
+
+---
+
+## The rules that matter
+
+- **Status moves forward only** — a signed quote can never go back to pending. (The single sanctioned exception: an order can be reverted from shipped back to ordered for a not-yet-existing site.)
+- **Ordering requires a signed quote** — the invoice is only raised once the signature exists.
+- **Shipping activates the subscription** for new sites — plan start/end dates are written onto the site, including all sites of a group quote at once.
+- **Bulk creation is all-or-nothing** — if any row fails validation, nothing is created.
+- **Deleted quotes are hidden, not erased**, and excluded from all lists by default.
+- **Group children never appear in the quote list** — they are reached through their group parent.
+- Every meaningful step **emails the quote owner** (created, approved for signing, withdrawn, ordered, renewed).
+
+---
+
+## Entry points {dev}
 - Quote list — `/settings/quote-management` — `denowatts-portal/src/pages/dashboard/quote-management/QuoteManagementPage.tsx`
 - Create single quote — `/settings/quote-management/create` — `denowatts-portal/src/pages/dashboard/quote-management/create-quote/CreateQuotePage.tsx`
 - Edit / view quote — `/settings/quote-management/:id` — `denowatts-portal/src/pages/dashboard/quote-management/quote/QuotePage.tsx`
@@ -13,7 +88,7 @@
 
 ---
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 All operations are in `denowatts-backend/src/quote/quote.resolver.ts`.
 
@@ -249,7 +324,7 @@ Updates an existing renewal group quote using upsert logic: for each site in `re
 
 ---
 
-## Services
+## Services {dev}
 
 ### QuoteService — `denowatts-backend/src/quote/quote.service.ts`
 
@@ -566,7 +641,7 @@ Normalizes SKUs by stripping the suffix after `-` (e.g., `100210-R` → `100210`
 
 ---
 
-## Schemas
+## Schemas {dev}
 
 ### Quote — `denowatts-backend/src/quote/schema/quote.schema.ts`
 
@@ -649,7 +724,7 @@ Both have identical fields, all optional strings: `contactFirstName`, `contactLa
 
 ---
 
-## Enums
+## Enums {dev}
 
 ### `QuoteStatus`
 `PENDING` | `REQUESTED_FOR_SIGNING` | `SIGNED` | `ORDERED` | `SHIPPED` | `WITHDRAWN` | `DELETED`
@@ -677,7 +752,7 @@ Both have identical fields, all optional strings: `contactFirstName`, `contactLa
 
 ---
 
-## SKU Reference
+## SKU Reference {dev}
 
 Defined in `denowatts-backend/src/quote/constants/index.ts`.
 
@@ -727,7 +802,7 @@ Defined in `denowatts-backend/src/quote/constants/index.ts`.
 
 ---
 
-## Business rules
+## Business rules (cited) {dev}
 
 - **Status is forward-only.** Updating a quote to a lower-level status is blocked for all users. Non-SUPER_ADMIN users can only change status to `WITHDRAWN`. — `denowatts-backend/src/quote/quote.service.ts:296–309`
 - **Expiry is computed, not stored.** The expiration date shown in the UI is `updatedAt + 90 days`. The field is not stored in MongoDB. — `denowatts-portal/src/pages/dashboard/quote-management/QuoteManagementPage.tsx:430`
@@ -746,7 +821,7 @@ Defined in `denowatts-backend/src/quote/constants/index.ts`.
 
 ---
 
-## Data touched
+## Data touched {dev}
 
 - `quotes` collection — primary table for all quote documents. Created on `createQuote` / `bulkCreateQuotes` / `renewQuote`. Updated on `updateQuote` / `quoteOrder` / `deleteQuote` / `processQuoteForSigning` / `updateRenewQuote`. Read on all queries.
 - `users` collection — read to resolve owner details on quote creation/update; read to populate `owner` field in paginate and getById responses.
@@ -760,7 +835,7 @@ Defined in `denowatts-backend/src/quote/constants/index.ts`.
 
 ---
 
-## Create Quote wizard (frontend)
+## Create Quote wizard (frontend) {dev}
 
 The create/edit quote form is a 5-step wizard in `denowatts-portal/src/pages/dashboard/quote-management/create-quote/components/QuoteForm.tsx`:
 
@@ -774,7 +849,7 @@ Default values: `isExistingSite: false`, `siteNewRetrofit: New`, `currentService
 
 ---
 
-## Quote list page (frontend)
+## Quote list page (frontend) {dev}
 
 Route: `/settings/quote-management` — `QuoteManagementPage.tsx`.
 
@@ -789,7 +864,7 @@ Route: `/settings/quote-management` — `QuoteManagementPage.tsx`.
 
 ---
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 
 - **`expiresAt` was removed from the schema.** The frontend calculates expiry as `updatedAt + 90 days`. There is no `expiresAt` field stored in MongoDB despite the `sortByExpireAt` sort option which actually sorts by `updatedAt`. — `quote.service.ts:588–590`
 - **Group quote financial totals vs. child products.** When displaying a group quote, `getQuoteById` merges all child products into the parent's `products` array purely for display. The stored `products: []` on the parent is empty. Financial totals on the parent ARE populated (sum of all children). — `quote.service.ts:693–711`
@@ -805,4 +880,23 @@ Route: `/settings/quote-management` — `QuoteManagementPage.tsx`.
 
 ---
 
-**Related flows:** [settings.md](settings.md) | [site.md](site.md) | [authentication.md](authentication.md)
+## Solar & platform terminology {dev}
+
+- **Quote** — a priced proposal for hardware + monitoring services for one site; the document this module manages, moving through `QuoteStatus` stages.
+- **Group quote** — a parent quote (`isGroup: true`) bundling multiple sites' renewal quotes into one signable document; products live on the child quotes (`groupId` → parent).
+- **Reference ID** — the human-readable 8-digit number identifying a quote (timestamp tail + 4-digit OTP).
+- **SKU** — the QuickBooks stock-keeping unit identifying each product (e.g. `100210` DenoSensorPOA); renewal variants carry an `-R` suffix.
+- **AC nameplate** — the site's rated AC capacity in MW; drives sensor/gateway quantities and which capacity-banded service SKU applies (`acSize` buckets 1/10/25/100/1000).
+- **Deno sensor (POA / rPOA)** — the Denowatts irradiance reference sensor; plane-of-array, with an optional rear-facing (rPOA) variant for bifacial modules.
+- **Gateway / DenoHub** — the on-site data-acquisition hardware; quantity scales with site size, and DenoHub is added for Modbus TCP+RTU acquisition.
+- **Service tier (`CurrentServices`)** — the monitoring subscription level: Basic/Essential Weather, Basic Monitoring, Advanced Energy Accounting, Expert Optimization Guide.
+- **DocuSeal** — the e-signature provider; a quote's submission ID and signing URL are stored as `dsEnvelopeId` / `dsSigningUrl`.
+- **QuickBooks** — the accounting system that is the source of truth for product names/prices and where the order invoice is created.
+- **Subscription activation** — on transition to SHIPPED for a new site, the linked Site gets `serviceStatus = SHIPPED` and a plan with start/end dates spanning the subscribed years.
+- **Soft delete** — `status = DELETED` + `deletedAt` timestamp; the document remains in MongoDB but is excluded from listings.
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[settings]] · [[site]] · [[channels]] · [[storage]] · [[companies]] · [[authentication]] · [[solar-glossary]]

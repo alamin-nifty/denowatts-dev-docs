@@ -2,21 +2,63 @@
 title: Status Logs
 owner: alamin-nifty
 status: draft
-version: 1
+version: 2
 updated_at: 2026-06-10
 ---
 
 # Status Logs
 
-**What it does (business):** Status Logs is the backend **data/log layer** behind platform health monitoring. External background services (data ingest, curation, charting, alarming, remote management, etc.) write one log record per health check into a MongoDB time-series-style collection (`statuslogs`); each record says whether a named service/sub-service was up (`status: true`) at a given `timestamp`. A human-maintained `settings` document (`setting: 'SYSTEM_STATUS'`) defines the *template* of services/sub-services to display. The status-logs module reads the latest log per service and overlays it on that template to compute a rolled-up `UP` / `DOWN` / `PARTIALLY_DEGRADED` system status. This is the data layer; the live status **dashboard** UI (portfolio/site/channel views) is documented separately in [status.md](status.md).
+**Status Logs** is the health record behind the platform's own "System Status" — is Denowatts itself running properly? The platform's monitoring services record a result for every health check they run on each backend service (data ingest, data curation, charting, alarming, remote management, and so on): up or down, at what time. This module reads the latest result for each service and rolls them all up into a single verdict — **UP**, **DOWN**, or **PARTIALLY DEGRADED** — which also feeds the public status page customers can check.
 
-**Entry point(s):**
+This is the *infrastructure* health layer. It's a different concept from the green/red dots showing whether a site's hardware is reporting — that's the Status dashboard, covered in [[status]].
+
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what gets logged, how the overall verdict is computed, and who can see it. *Developer* adds the GraphQL and REST surfaces, the service internals and aggregations, every schema and DTO shape, file references, and a terminology primer.
+
+---
+
+## Why this matters
+
+When data looks wrong or charts go blank, the first question is whether the problem is at the solar site or in the platform itself. Status Logs answers the platform half of that question: it's the source of truth for "is our own machinery healthy?", both for SuperAdmins inside the portal and for customers via the public status page.
+
+---
+
+## What gets logged
+
+Each log entry says: a named service (optionally a finer-grained sub-service, such as a specific external data feed) was checked at a given time, and it was either up or down. Entries can also note how long the check took and whether the job overran its expected window. These logs are **recorded by the platform's monitoring services** — separate background workers, not this application. This module only reads them.
+
+---
+
+## How the overall verdict is computed
+
+A human-maintained **template** lists which services and sub-services should appear on the status display, with their friendly names and descriptions. The module takes that template, overlays the most recent log for each entry, and rolls it up:
+
+- everything up → **UP**
+- everything down → **DOWN**
+- a mix of up and down → **PARTIALLY DEGRADED**
+- a template with no services at all counts as **DOWN**
+
+---
+
+## The optimistic default
+
+A service in the template with **no log at all is treated as healthy** — only an explicit "down" record turns it red. That keeps brand-new services from showing as failures before their first check, but it has a flip side: if a monitoring worker silently dies and stops writing logs, the service it watched keeps showing green. Spotting a fully-dead monitor requires noticing the absence of fresh logs, not a red indicator.
+
+---
+
+## Who can see it
+
+- The full rolled-up system status inside the portal is **SuperAdmin only**. (The header indicator that was meant to show it is currently switched off in the product.)
+- The simpler per-service lookups are **public, with no login** — they exist to power the external public status page.
+
+---
+
+## Entry points {dev}
 - **GraphQL** — `systemStatus` query, SuperAdmin only. Intended consumer is the green/yellow/red dot in the portal header (`denowatts-portal/src/common/components/Header.tsx:933-979`), wired via `SYSTEM_STATUS` (`denowatts-portal/src/graphql/queries/systemNotificationQueries.ts:14`). **Note: this consumer is currently commented out** (the `useQuery(SYSTEM_STATUS, …)` call at `Header.tsx:228-231` and the JSX block are commented), so at present nothing in the portal actively calls it.
 - **REST** (legacy / service-to-service) — three `@Public()` endpoints under `/status-logs` (`denowatts-backend/src/status-logs/status-logs.controller.ts`). These have **no auth and no role guard** and appear to exist for an external/public status page (the header links out to `https://status.denowatts.com`, `Header.tsx:947`).
 
 ---
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 ### Queries
 
@@ -53,7 +95,7 @@ There are **no mutations or subscriptions** in this module. The module is read-o
 
 ---
 
-## Services
+## Services {dev}
 
 ### StatusLogsService — `status-logs.service.ts`
 
@@ -113,7 +155,7 @@ Backs `POST /status-logs/latest`. Returns the newest log for each requested name
 
 ---
 
-## Schemas
+## Schemas {dev}
 
 ### StatusLog — `schemas/status-logs.schema.ts`
 `@Schema({ timestamps: true })` → Mongoose adds `createdAt`/`updatedAt` automatically (`:72`). Also an `@ObjectType()` for GraphQL. Collection: `statuslogs` (default pluralization; not overridden).
@@ -155,7 +197,7 @@ The same `settings` collection is shared with other features (e.g. `METRIC_PREFI
 
 ---
 
-## DTOs
+## DTOs {dev}
 
 ### StatusLogsInput — `dto/status-logs.input.ts:3-7`
 | Field | Type | Validation | Purpose |
@@ -172,7 +214,7 @@ The same `settings` collection is shared with other features (e.g. `METRIC_PREFI
 
 ---
 
-## Business rules
+## Business rules (cited) {dev}
 - **`systemStatus` is SuperAdmin-only** — `@Roles(UserType.SUPER_ADMIN)` on the resolver; non-SuperAdmins get `ForbiddenException` (403). `status-logs.resolver.ts:11`, `common/guards/roles.guard.ts:34-40`.
 - **All REST endpoints are unauthenticated** — `@Public()` controller bypasses JWT entirely; intended for an external public status page. `status-logs.controller.ts:7`, `common/guards/auth.guard.ts:29-31`.
 - **Missing log ⇒ assumed UP** — a template service/sub-service with no matching log defaults to `status = true`. `status-logs.service.ts:125,134`.
@@ -183,7 +225,7 @@ The same `settings` collection is shared with other features (e.g. `METRIC_PREFI
 - **Missing template ⇒ 404** — `getSystemStatus`/`getStatusLogsTemplate` throw `NotFoundException` if no `SYSTEM_STATUS` settings doc exists. `status-logs.service.ts:163-165, 187-189`.
 - **`lastUpdated` differs by endpoint** — GraphQL `systemStatus` returns the doc's stored `lastUpdated` (falling back to now); REST `/template` always returns `new Date()`. `status-logs.service.ts:176` vs `:202`.
 
-## Data touched
+## Data touched {dev}
 - `statuslogs` (read-only) — every method reads; the module never writes:
   - `statuslogs.timestamp` — sort key (desc) for "latest" selection.
   - `statuslogs.metadata.service`, `statuslogs.metadata.subService` — match keys (`$or` / `$in`) and `$group` keys.
@@ -193,7 +235,7 @@ The same `settings` collection is shared with other features (e.g. `METRIC_PREFI
   - `settings.services[]` (`.name`, `.subServices[].name`, plus `displayName`/`interval`/`description`) — the display template.
   - `settings.lastUpdated`, `settings._id`, `settings.setting` — surfaced in the response.
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 - **No producers in this codebase.** Nothing in `denowatts-backend` writes to `statuslogs` or maintains the `SYSTEM_STATUS` settings doc (grep for inserts returns only this module's own files). Logs are presumably written by **external/standalone background services** (data-ingest, curation, charting, alarming workers) and the template is human-maintained in the DB. Treat this module as a pure read/aggregation layer. **Flag for human review** to confirm where producers live.
 - **Frontend consumer is dormant.** The portal's `systemStatus` usage in `Header.tsx` (the status dot, intended to poll every 5 min and link to `status.denowatts.com`) is **commented out** (`Header.tsx:228-231` query, `:933-979` JSX). The query/types still ship in `__generated__/graphql.ts`. So today the GraphQL query is defined and reachable but not actively consumed by the UI.
 - **Missing-data optimism.** Because absent logs default to UP, a service that has *never* reported (or whose producer died and stopped writing) shows green, not red — only an explicit `status: false` log turns it down. This can mask a fully-dead producer.
@@ -203,4 +245,21 @@ The same `settings` collection is shared with other features (e.g. `METRIC_PREFI
 - **Enum drift risk.** Overlay matching is string-based against the template's `name` values, independent of `StatusLogService`/`StatusLogSubService`. If a template `name` doesn't exactly equal what producers write, that service silently stays UP (default).
 - **`/template` leaks raw settings fields.** Because `getStatusLogsTemplate` spreads the lean settings doc, any extra keys stored on the `SYSTEM_STATUS` document are returned verbatim over the public REST endpoint.
 
-**Related flows:** [status.md](status.md) (the live status **dashboard** — portfolio/site/channel views; this doc is its backend log layer), [channels.md](channels.md) (channel-level connection status, a different status concept), [events.md](events.md) (alarm/event records that feed alarm counts in the dashboard), [authentication.md](authentication.md) (the `@Roles`/`@Public` guard mechanics), [solar-glossary.md](solar-glossary.md) (service/status terminology).
+## Solar & platform terminology {dev}
+
+- **Status log** — one health-check result document in `statuslogs`: `{ timestamp, metadata: { service, subService }, status, runtime?, overrun? }`.
+- **Service / sub-service** — the named unit being checked (e.g. `DATA_INGEST`, `CHARTS`, `ALARMING`); a sub-service is a finer-grained dependency such as `ALSOENERGY` or `NYSERDA`.
+- **SYSTEM_STATUS template** — the human-maintained `settings` document (`setting: 'SYSTEM_STATUS'`) listing which services/sub-services to display, with `displayName`/`interval`/`description`.
+- **Overlay** — the act of stamping each template entry with the newest matching log's `status`; missing log ⇒ `true` (UP).
+- **Rollup** — the overall verdict: all up ⇒ `UP`, all down ⇒ `DOWN`, mixed ⇒ `PARTIALLY_DEGRADED`, empty template ⇒ `DOWN`.
+- **Latest-per-pair semantics** — `$sort timestamp:-1` + `$group $first` per `(service, subService)`, so exactly the newest log wins.
+- **Public status page** — the external page at `status.denowatts.com` served by the unauthenticated `@Public()` REST endpoints.
+- **Producer** — whatever writes the logs; none exist in this codebase — logs are recorded by the platform's external monitoring services.
+- **`runtime` / `overrun`** — optional fields noting how long a check took and whether it exceeded its expected window/SLA.
+- **`settings` collection** — a schemaless shared collection discriminated by the `setting` field (also holds `METRIC_PREFIX` for metrics).
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[status]] · [[channels]] · [[events]] · [[authentication]] · [[solar-glossary]]

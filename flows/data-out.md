@@ -1,8 +1,73 @@
+---
+title: Data Out (Data Export)
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Data Out (Data Export)
 
-**What it does (business):** The `data-out` module exposes time-series telemetry data collected from solar installations to external consumers and internal tools. It provides two transport layers — a REST API (versioned `/api/v3`) secured by company API keys and IP whitelisting for third-party integrations, and a GraphQL API used internally by the portal. Four data granularities are available: per-channel raw sensor readings (`channelraw`), per-channel rollup aggregates (`channelrollup`), site-level rollups (`siterollup`), and site-level daily rollups (`sitedailyrollup`).
+Every sensor, inverter, and meter at a solar site produces a steady stream of measurements. **Data Out** is the layer that serves that data back out — both the live raw readings an installer watches while verifying hardware in the field, and the summarized "rollup" series (per device, per site, and per day) that charts and reports are built on.
 
-**Entry point(s):**
+It also gives customers a way to pull their own data into their own tools: a public data API where each company gets an API key, locked down to the company's approved network addresses, so third-party systems can fetch raw readings and rollups directly.
+
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what data is available, how customers pull it, and the access rules. *Developer* adds the full GraphQL and REST surface, the services and aggregation pipelines, every schema and DTO, the guards and metric-name translation, file references, and a solar-terminology primer.
+
+---
+
+## Why this matters
+
+This module is the product's data faucet. If the rollups are wrong or slow, every chart and report downstream is wrong or slow. If the public API leaks, a customer could see another company's plant data. And in the field, the live-data view is how an installer proves a freshly mounted sensor is actually reporting before they leave the site — it's the last checkpoint between "installed" and "trusted."
+
+---
+
+## The four data feeds
+
+Data is available at four levels of detail:
+
+- **Raw channel data** — every individual reading from a single device (irradiance, temperature, signal strength, voltage), stamped to the second. The most detailed and the most voluminous.
+- **Channel rollups** — summarized readings per device over short periods (irradiance, insolation, soiling statistics, temperatures, energy comparisons).
+- **Site rollups** — whole-site summaries over short periods: energy and power from inverters and meters, expected power, module temperature.
+- **Daily site rollups** — one record per site per day, covering produced vs. expected energy under several models, weather (precipitation, snow), temperatures, and a breakdown of energy losses by cause (outage, shading, snow, systemic).
+
+---
+
+## Pulling data with the public API
+
+Customers can fetch all four feeds from outside the platform:
+
+- Each company is issued an **API key**; every request must present it.
+- Requests are only accepted from the company's **whitelisted IP addresses** — key and address must both check out.
+- A key can only read sites its company **owns or has been granted access to**.
+- Requests are **rate-limited** (150 per minute per key-and-site combination) and results come back in pages of at most 1,000 records.
+- **History windows** apply: raw data can be queried up to 30 days back, channel rollups 90 days, site rollups one year; daily rollups have no limit.
+- Callers can ask for just the measurements they want by name, and all numbers are rounded to four decimal places.
+
+---
+
+## Live data for field verification
+
+During field setup, the portal shows readings arriving in near-real time so an installer can confirm each sensor is alive:
+
+- A **live data view** lists the latest raw readings for a sensor, refreshed every minute, with timestamps shown in the site's local timezone.
+- A **verification step** counts how many readings each sensor has sent in a time window, per serial number, so the installer can see at a glance which units are reporting.
+- Sensors that haven't been wired to a channel yet still appear — the platform matches them back to their hardware identity, so brand-new equipment shows up before configuration is finished.
+
+---
+
+## The rules that matter
+
+- **API key + IP whitelist together** gate every external request; either one failing means no data.
+- **Site access is checked per request** — the key's company must own the site or appear in its access list.
+- **History limits protect the system**: 30 days raw / 90 days channel rollup / 365 days site rollup for external callers. An "internal" flag can bypass these limits, and the doc flags that nothing extra protects that flag — any key holder can set it (flagged for review).
+- **The in-portal raw-data queries have no role checks** — any signed-in user can query any site's raw data by its id. This is a flagged security concern awaiting human review.
+- **The "copy API URL" button always points at the production data server**, regardless of which environment you're in (also flagged).
+- All values are rounded to four decimals, and page size is capped at 1,000 records no matter what is requested.
+
+---
+
+## Entry points {dev}
 - **Live Data page** (field-setup wizard step) — `denowatts-portal/src/pages/dashboard/field-setup/live-data/LiveDataPage.tsx`, route `/field-setup/gateway-setup/gateway-live-data`
 - **Verify Installation step** — `denowatts-portal/src/pages/dashboard/field-setup/verify-installation/VerifyInstallationPage.tsx`, route `/field-setup/gateway-setup/verify-installation`
 - **Live Data Modal** — `denowatts-portal/src/pages/dashboard/field-setup/components/LiveDataModal.tsx` (modal, shown during verification)
@@ -11,7 +76,7 @@
 
 ---
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 ### Query: `channelRaw`
 
@@ -78,7 +143,7 @@ query ChannelDataCount($filter: ChannelDataCountFilterInput!) {
 
 ---
 
-## REST API surface
+## REST API surface {dev}
 
 **Controller:** `denowatts-backend/src/data-out/device-data.controller.ts`
 
@@ -111,7 +176,7 @@ All REST endpoints are under `@Controller('api/v3')`, decorated `@Public()` (byp
 
 ---
 
-## Services
+## Services {dev}
 
 ### `DeviceDataService` — `denowatts-backend/src/data-out/device-data.service.ts`
 
@@ -242,7 +307,7 @@ Returns array of `{ serialNumber, count, channel }`.
 
 ---
 
-## Schemas
+## Schemas {dev}
 
 ### `ChannelRaw` — `denowatts-backend/src/data-out/schemas/channel-raw.schema.ts`
 
@@ -355,7 +420,7 @@ Daily aggregated site performance data. Standard collection. Queried on `date` f
 
 ---
 
-## DTOs
+## DTOs {dev}
 
 ### `ChannelDataFilterInput` — `denowatts-backend/src/data-out/dto/raw-data-filter.dto.ts:33`
 
@@ -434,7 +499,7 @@ GraphQL return type for `channelRaw` query:
 
 ---
 
-## Guards
+## Guards {dev}
 
 ### `ApiGuard` — `denowatts-backend/src/data-out/guards/api.guard.ts`
 
@@ -457,7 +522,7 @@ Extends NestJS `ThrottlerGuard`. Overrides `getTracker` to use a composite throt
 
 ---
 
-## Metrics name translation (`data/metrics-data.ts`)
+## Metrics name translation (`data/metrics-data.ts`) {dev}
 
 The `metrics-data.ts` file (`denowatts-backend/src/data-out/data/metrics-data.ts`) defines a bidirectional name mapping between canonical public-facing field names and internal DB field names used in the `channelraw` collection.
 
@@ -489,7 +554,7 @@ Iterates over every key in a document. If a key exists in `metricsOldPropertiesO
 
 ---
 
-## Module wiring
+## Module wiring {dev}
 
 **Module:** `denowatts-backend/src/data-out/device-data.module.ts`
 
@@ -509,7 +574,7 @@ Iterates over every key in a document. If a key exists in `metricsOldPropertiesO
 
 ---
 
-## Business rules
+## Business rules (cited) {dev}
 
 - External REST callers (where `internal = false`) are limited to raw data within 30 days, rollup data within 90 days, site rollup within 365 days — `device-data.service.ts:83-89`
 - All numeric values are rounded to 4 decimal places before being returned — `device-data.service.ts:141-148`
@@ -523,7 +588,7 @@ Iterates over every key in a document. If a key exists in `metricsOldPropertiesO
 
 ---
 
-## Data touched
+## Data touched {dev}
 
 - `channelraw` (timeseries collection) — read by all four service methods and both guards; never written by this module
 - `channelrollup` — read by `findChannelRollupData`
@@ -536,7 +601,7 @@ Iterates over every key in a document. If a key exists in `metricsOldPropertiesO
 
 ---
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 
 - **`SiteDailyRollup` filters on `date`, not `timestamp`:** The schema declares `timestamp` but the query filter uses `date`. These appear to be separate fields; the query at `device-data.service.ts:93` will return no results if the collection only populates `timestamp`. Flag for human review.
 - **`pagination` field on `ChannelRawFilterInput` is unused:** The `pagination?: boolean` field is declared in the DTO but referenced nowhere in the service logic. Its intended purpose is unclear.
@@ -550,10 +615,24 @@ Iterates over every key in a document. If a key exists in `metricsOldPropertiesO
 
 ---
 
-## Related flows
+## Solar & platform terminology {dev}
 
-- [Field Setup](field-setup.md) — the Live Data page and Verify Installation step are embedded within the field-setup wizard
-- [Site](site.md) — Channel Map page uses this module to generate clipboard API URLs
-- [Analytics](analytics.md) — analytics charts pull from external chart service which may itself consume these rollup collections
-- [Assets](assets.md) — `getChannelLastRawRecord` is referenced in assets metrics service tests; asset MAC addresses are used for DENO lookup in the unlinked branch
-- [Channels](channels.md) — `channelId` and `config.serialNumber` are the join keys used throughout this module's aggregation pipelines
+- **Channel** — one configured data stream from a single piece of hardware (sensor, inverter, meter, gateway). The `metadata.channel` string here matches `channels.channelId`. See [[channels]].
+- **Raw data** — individual second-granularity sensor readings as they arrive, stored in the `channelraw` time-series collection. The most detailed feed; limited to 30 days back for external callers.
+- **Rollup** — pre-aggregated summary data over an interval. Three tiers here: per-channel (`channelrollup`), per-site (`siterollup`), and per-site-per-day (`sitedailyrollup`).
+- **Interval / timestamp** — each rollup row is stamped with its period's timestamp; daily rollups are additionally keyed by a `date` field.
+- **Irradiance** — solar power arriving per unit area (W/m²); `irrDeno1`/`irrDeno2` are the two primary sensors (displayed as their average), `irrDeno3` the auxiliary.
+- **Insolation** — irradiance accumulated over time (energy per area); `insDeno`, `insHorRef`, `insPoaRef`.
+- **Back-of-module (BOM) temperature** — temperature measured behind the PV panel (`tempBom`); feeds cell-temperature models.
+- **DENO sensor** — a Denowatts reference sensor (irradiance + temperature); identified by MAC (`denoMac`) and serial number.
+- **Gateway (dgwMac)** — the on-site data-acquisition box; raw records carry its MAC, which is how serial-number lookups find a gateway's readings.
+- **API key** — the per-company secret presented in the `x-api-key` header to use the public REST API.
+- **IP whitelist** — the company's list of approved caller addresses; requests from any other IP are rejected even with a valid key.
+- **Rate limiting (throttle)** — 150 requests per minute per API-key+site pair on the REST endpoints.
+- **Pagination** — results are returned in pages (default and hard cap of 1,000 records), with total/next/previous page metadata.
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[field-setup]] · [[site]] · [[analytics]] · [[assets]] · [[channels]] · [[metrics]] · [[solar-glossary]]

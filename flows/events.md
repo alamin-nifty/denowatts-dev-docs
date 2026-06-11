@@ -1,15 +1,82 @@
+---
+title: Events
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Events
 
-**What it does (business):** The events module is the central log for everything that happens at a solar site — operator notes, alarms raised by monitoring hardware, maintenance records, data curation actions, tickets (support requests), lessons learned, and other site-level occurrences. Each event has a time range, category, optional severity, optional image attachments, and a threaded comment system. Operators can flag events as tasks, acknowledge alarms, and upvote events; the system fires email and in-app notifications to relevant stakeholders on creation, update, and new comments.
+An **event** is one entry on a solar site's timeline — an operator note, an alarm raised by the monitoring system, a maintenance record, a support ticket, a lesson learned, or a data-correction action. The events feed is the running logbook of everything that happened at a site: when it started, when (or whether) it ended, how serious it was, and what people said about it. Each event can carry photo/document attachments and a threaded comment conversation.
 
-**Entry point(s):**
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what events are, the categories, the comment and acknowledgment workflows, and the rules that govern them. *Developer* adds the full GraphQL surface, the services, every schema and DTO shape, the frontend components, file references, and a solar-terminology primer.
+
+---
+
+## Why this matters
+
+The events feed is the site's institutional memory. When production dips, the first question is always "what happened?" — and the answer lives here: an alarm that opened, a maintenance visit, a grid outage, a note someone left. Tickets routed through events are how customers ask for help, and data-curation events are how operators correct the site's reported numbers. If events are wrong or missing, the story of the site is wrong.
+
+---
+
+## What goes on the timeline
+
+Events are classified by **category**. The main kinds:
+
+- **Notes** — free-form operator observations, optionally tied to a specific piece of equipment.
+- **Alarms** — raised automatically by the monitoring system, not by people. Open alarms have no end date yet.
+- **Maintenance / Malfunction** — planned work and equipment failures.
+- **Tickets** — support requests. Tickets carry their own workflow status: *New → In Progress → Awaiting Customer → Closed*.
+- **Lessons Learned** — knowledge-base entries; uniquely, platform administrators can create these without tying them to any site (fleet-wide lessons).
+- **Data Curation / Data Repair** — actions that correct or recategorize the site's recorded data for a time window.
+- **Site Diagnostics, Aerial Scan, loss records, Test reports** — other operational records.
+
+Every event has a title, a start time, an optional end time (no end time = *ongoing*), an optional severity (**Critical / High / Routine**), and optional file attachments. Events can also be **flagged as a task** so they show up in task-focused views.
+
+---
+
+## Comments, mentions, and upvotes
+
+Each event has a comment thread. Inside a comment you can **@-mention** a colleague — they get an in-app notification pointing at the event. Every new comment also emails everyone already involved in the conversation: the event's creator, anyone who commented before, and anyone previously mentioned. Users can also **upvote** an event to signal importance (one upvote per person per event).
+
+---
+
+## Alarms and acknowledgment
+
+Alarms arrive from the monitoring pipeline already classified with a severity. Related alarms are bundled into an **alarm group** — the feed shows the group as a single entry rather than dozens of individual alarms, and the individual alarms appear nested under it. When someone **acknowledges** an alarm group, every alarm inside the group is acknowledged at once. An alarm is *open* until it gets an end date; the feed can filter to open alarms, unacknowledged alarms, or hide everything that's already closed.
+
+---
+
+## Who gets notified
+
+- **Ticket creators** get an email when their ticket is created and another whenever someone changes it (with a list of exactly what changed).
+- **Company notification settings** decide who else hears about new events: for eligible categories, each company can choose to notify its site managers and/or a hand-picked list of users, by email, in-app, or both. (See [[notification]] and [[settings]].)
+- **Comment participants** get the thread emails described above; mentioned users also get an in-app notification.
+
+---
+
+## The rules that matter
+
+- **Every event belongs to a site**, with one exception: platform administrators can create site-less, fleet-wide *Lessons Learned* entries.
+- **Machine-created events start as "Pending"** rather than confirmed, so a human can review them.
+- **New tickets start in the "New" status**, and giving a ticket an end date closes it.
+- **Deleting an event hides it, it never erases it** — the record is kept for audit purposes. Archiving a site hides all of its events the same way (and unarchiving brings them back).
+- **Date changes are remembered** — when an event's start or end date is edited, the previous dates are kept on the record.
+- **Attachments are limited to common image and document types**, capped at 20 MB per file.
+- **Certain data-curation actions trigger a recalculation** of the site's data for the chosen time window.
+- **Known gap (flagged for review):** there is no server-side ownership check on editing or deleting events — any signed-in user who knows an event's id can update or delete it. Access control today only limits which events appear in your feed.
+
+---
+
+## Entry points {dev}
 - Events Feed — `denowatts-portal/src/pages/dashboard/events-feed/EventsFeedPage.tsx` → route `/events-feed`
 - Event Detail — `denowatts-portal/src/pages/dashboard/events-feed/EventDetailsPage.tsx` → route `/events-feed/:id`
 - Create Event modal launched from the feed page, from analytics charts (via `SimpleEventModal`), and inline from the site view (via `QuickEventModal`)
 
 ---
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 ### Queries
 
@@ -30,7 +97,7 @@
 
 ---
 
-## Services
+## Services {dev}
 
 ### EventsService — `denowatts-backend/src/events/events.service.ts`
 
@@ -205,7 +272,7 @@ Simple `find` with `populate('user').populate('mentionsUsers')` — `comments.se
 
 ---
 
-## Schemas
+## Schemas {dev}
 
 ### Event — `denowatts-backend/src/events/schemas/event.schema.ts`
 
@@ -283,7 +350,7 @@ No uniqueness constraint on `(event, user)` — the application relies on `findO
 
 ---
 
-## Enums
+## Enums {dev}
 
 Defined in `denowatts-backend/src/events/schemas/event.schema.ts` and registered with the GraphQL schema via `registerEnumType`:
 
@@ -306,7 +373,7 @@ Defined in `denowatts-backend/src/events/schemas/event.schema.ts` and registered
 
 ---
 
-## Constants — `denowatts-backend/src/events/constants/index.ts`
+## Constants — `denowatts-backend/src/events/constants/index.ts` {dev}
 
 **`ALLOWED_FILE_EXTENSIONS`**: `jpg`, `jpeg`, `png`, `gif`, `webp`, `bmp`, `tiff`, `tif`, `svg`, `heic`, `heif`, `pdf`, `doc`, `docx`, `xls`, `xlsx`, `ppt`, `txt`, `csv` — enforced in `validateFileExtension()` for image tokens and image URLs.
 
@@ -314,7 +381,7 @@ Defined in `denowatts-backend/src/events/schemas/event.schema.ts` and registered
 
 ---
 
-## DTOs
+## DTOs {dev}
 
 ### CreateEventInput — `denowatts-backend/src/events/dto/event.input.ts`
 
@@ -394,7 +461,7 @@ Inherits all schema field validations: `title` required, `category` required (en
 
 ---
 
-## Response types — `denowatts-backend/src/events/dto/event.response.ts`
+## Response types — `denowatts-backend/src/events/dto/event.response.ts` {dev}
 
 | Type | Composition | Purpose |
 |---|---|---|
@@ -409,7 +476,7 @@ Inherits all schema field validations: `title` required, `category` required (en
 
 ---
 
-## Frontend components — `denowatts-portal/src/common/components/Event/`
+## Frontend components — `denowatts-portal/src/common/components/Event/` {dev}
 
 ### `EditEventForm.tsx`
 
@@ -514,7 +581,7 @@ Shared date utilities:
 
 ---
 
-## Business rules
+## Business rules (cited) {dev}
 
 1. **Site is required for all non-LESSONS_LEARNED events by non-super-admins.** Super admins may create global (site=null) `LESSONS_LEARNED` events. — `events.service.ts:64–71`
 2. **System-generated events default to PENDING status.** Events created by `UserType.SYSTEM` are not auto-confirmed. — `events.service.ts:78–80`
@@ -539,7 +606,7 @@ Shared date utilities:
 
 ---
 
-## Data touched
+## Data touched {dev}
 
 - `events` collection — core document; created/updated/soft-deleted by `EventsService`; `alarmGroup`, `isAlarmGroup`, `isAlarm` distinguish alarm events from operator-created ones
 - `comments` collection — created/updated/hard-deleted by `CommentsService`; linked to `events` via `event` field; virtual on Event schema
@@ -550,7 +617,7 @@ Shared date utilities:
 
 ---
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 
 - **LESSONS_LEARNED global events:** `site` can be null only for this category when created by SUPER_ADMIN. The update path also has a guard: converting a site-less LESSONS_LEARNED to another category requires a valid site to be provided — `events.service.ts:519–529`.
 - **`findOne` by channel ID:** the `event` query accepts either an event `_id` or a `channel` ObjectId (the `$or` query). This supports looking up the event associated with a channel directly — `events.service.ts:474–482`.
@@ -567,8 +634,23 @@ Shared date utilities:
 
 ---
 
-**Related flows:**
-- `flows/authentication.md` — JWT auth, `@CurrentUser()` decorator used in all resolvers
-- `flows/site.md` — site detail pages where events appear contextually; `archiveSiteEvents` called from site service
-- `flows/analytics.md` — analytics page uses `SimpleEventModal` and `EventFeedChart` to annotate charts with events
-- `flows/settings.md` — company notification settings drive who receives event notifications
+## Solar & platform terminology {dev}
+
+- **Event** — one entry on a site's timeline: a note, alarm, maintenance record, ticket, lesson learned, or data-curation action, with a start (and optional end) date.
+- **Alarm** — an event raised automatically by the monitoring pipeline (`isAlarm: true`), classified with a severity by its [[alarm-config]] rule. *Open* = no `endDate` yet.
+- **Alarm group** — a parent event bundling related child alarms; the feed shows only the parent, and acknowledging it cascades to all children.
+- **Acknowledgment** — a user marking an alarm as seen (`acknowledgedBy`); unacknowledged alarms drive the portfolio rollups.
+- **Ticket** — a support-request event with its own workflow status (`NEW → IN_PROGRESS → AWAITING_CUSTOMER → CLOSED`) and creator-notification emails.
+- **Lessons Learned** — a knowledge-base category; the only category allowed to exist without a site (SUPER_ADMIN-created, fleet-wide).
+- **Data curation** — events that correct recorded site data (`SPREAD_CUMULATIVES`, `OVERRIDE_WITH_REMOTE`, `RECATEGORIZE`); some actions trigger a site resync in the external matrix service.
+- **Severity** — `CRITICAL / HIGH / ROUTINE`; copied onto alarm events from the alarm rule and used for notification routing.
+- **Mention** — `@[Display Name](userId)` markup inside a comment; parsed server-side into in-app `MENTION` notifications.
+- **Upvote** — a per-user endorsement of an event; stored as its own document.
+- **Soft delete / archive** — `deletedAt` hides an event permanently (audit-safe); `archivedAt` hides it while its site is archived and is reversible.
+- **Site manager** — a user attached to a site who can be auto-included as a notification recipient via company notification settings.
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[authentication]] · [[site]] · [[analytics]] · [[settings]] · [[notification]] · [[alarm-config]] · [[webhooks]] · [[solar-glossary]]

@@ -2,21 +2,71 @@
 title: Site Builder
 owner: alamin-nifty
 status: draft
-version: 1
+version: 2
 updated_at: 2026-06-10
 ---
 
 # Site Builder
 
-**What it does (business):** The Site Builder (UI: "Virtual Site Builder", VSB) is a drag-and-drop canvas where an Admin/SuperAdmin draws a site's electrical topology as a graph of device nodes (benchmarks, modules, inverters, meters, transformer, recloser, grid, batteries, couplings) connected by edges, then assigns the site's data channels onto those nodes. "Deploying" that graph writes a per-channel `siteMap` (region + device + testPoint) onto every channel in the site, which is how downstream features know each channel's logical role in the plant. Unlike Field Setup (which commissions gateway/Deno hardware) and the Channels feature (which configures individual channel protocol/config), Site Builder is purely about the *logical layout* and *channel-to-role mapping* of an already-existing site.
+The **Site Builder** (shown in the product as the "Virtual Site Builder") is a drag-and-drop canvas where an administrator draws a solar site's layout — benchmark sensors, solar blocks, inverters, meters, transformer, grid connection, batteries — as connected boxes, then assigns the site's data channels onto those boxes. Pressing **Deploy** stamps each channel with its place in that layout (its zone, device type, and whether it's a test point), which is how the rest of the platform knows each data stream's logical role in the plant.
 
-**Entry point(s):** UI — Site detail page tab "Virtual Site Builder", route `/site/:siteId/site-builder` — `denowatts-portal/src/pages/dashboard/site/site-builder/SiteBuilderPage.tsx`. Registered in `denowatts-portal/src/router.tsx:163-170`, wrapped in `<NonUserRoute>` (Admin/SuperAdmin only). It is one of the 15 site sub-pages described in [[site]].
+It sits between two neighbouring features: Field Setup commissions the physical hardware, and the Channels feature configures each individual data stream — Site Builder is purely about the *logical layout* and the *channel-to-role mapping* of a site that already exists.
+
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what the canvas does, how building and deploying work, and the rules that matter. *Developer* adds the full GraphQL surface, the deploy engine internals, every schema and DTO shape, the frontend graph mechanics, file references, and a terminology primer.
+
+---
+
+## Why this matters
+
+Charts, status views, and analyses downstream need to know whether a given data stream is a benchmark irradiance sensor, an inverter, the production meter, or a battery coupling. That knowledge isn't in the raw data — it comes from the layout an administrator draws here and deploys onto the channels. A site that's never been deployed (or deployed wrong) leaves its channels without a role, and anything that groups data by region or device works with less context.
+
+---
+
+## Building the layout
+
+There is no multi-step wizard — it's a single live canvas:
+
+- **Pick a site**, and the canvas loads its saved layout. If the site has never been laid out, a sensible **default template** is generated automatically from the site's energy-model blocks, with the site's active channels pre-placed onto the right boxes.
+- **Drag devices** from a palette onto the canvas, connect them with lines, move them around (positions snap to a grid), and edit titles and notes. Battery **couplings** can be created in batches and snapped onto an existing connection.
+- **Drag channels** from the sidebar onto a device box. A channel can only land on a compatible box — an irradiance benchmark channel can't be dropped onto an inverter, for example; mismatches are rejected with a message.
+- **Edits save automatically** about a second after you stop making changes — there's no explicit Save button to remember.
+- A **Sync** action realigns the canvas with the site's energy-model blocks if those have changed since the layout was drawn, and a **Revert** action restores the last deployed layout.
+
+---
+
+## Deploying the layout
+
+Deploy is the moment the drawing becomes real: every channel placed in the layout gets its position written onto it, and — importantly — **every channel not in the layout has its position cleared**. Deploy is a full replace, not a merge. The platform also keeps a snapshot of what was deployed and when, which powers the Revert action and the "changes since last deploy" indicator that enables or disables the Deploy button. (Mechanically, the deploy action itself lives in the channels feature — see [[channels]].)
+
+---
+
+## Who can do what
+
+Site Builder is **Admin and SuperAdmin only, end to end** — regular users can't open the page, and the underlying operations reject them too.
+
+---
+
+## The rules that matter
+
+- **One layout per site** — each site has exactly one builder record.
+- **You can't deploy an empty canvas** — a saved layout with at least one device box is required.
+- **Deploy is a full replace** — removing a channel from the layout and re-deploying clears that channel's position.
+- **Deploying a layout whose boxes hold no channels wipes every channel's position** — a valid (if drastic) way to reset a site's mapping.
+- **Channel placement is type-checked** — benchmark, inverter, and meter boxes each only accept matching channel kinds.
+- **Last save wins** — two people editing the same site at once will silently overwrite each other; there's no merge.
+- **Only active channels are auto-placed** when the default template is generated.
+
+---
+
+## Entry points {dev}
+
+UI — Site detail page tab "Virtual Site Builder", route `/site/:siteId/site-builder` — `denowatts-portal/src/pages/dashboard/site/site-builder/SiteBuilderPage.tsx`. Registered in `denowatts-portal/src/router.tsx:163-170`, wrapped in `<NonUserRoute>` (Admin/SuperAdmin only). It is one of the 15 site sub-pages described in [[site]].
 
 > Note on naming: the backend NestJS module is `site-builder` (`denowatts-backend/src/site-builder/`). The portal folder is also `site-builder`. The site's general tab label is "Virtual Site Builder". All three refer to the same feature.
 
 ---
 
-## Build flow overview
+## Build flow overview {dev}
 
 The Site Builder has **no multi-step wizard** — it is a single live canvas with autosave. The lifecycle is:
 
@@ -38,7 +88,7 @@ The backend `site-builder` module is intentionally thin: it is a **per-site key-
 
 ---
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 ### Query: `siteBuilder(siteId: ID!): SiteBuilder` (nullable)
 - Resolver — `denowatts-backend/src/site-builder/site-builder.resolver.ts:13-21`
@@ -72,7 +122,7 @@ There are **no other** site-builder GraphQL operations. No create/delete mutatio
 
 ---
 
-## Services
+## Services {dev}
 
 ### SiteBuilderService — `denowatts-backend/src/site-builder/site-builder.service.ts`
 
@@ -119,7 +169,7 @@ Step-by-step:
 
 ---
 
-## Schemas
+## Schemas {dev}
 
 All in `denowatts-backend/src/site-builder/schemas/site-builder.schema.ts`. Every nested class is `@Schema({ _id: false })` (embedded subdocuments, no own ids). The collection is `sitebuilders`.
 
@@ -184,7 +234,7 @@ The deploy writes onto the `channels` collection's `siteMap` subdocument (`Chann
 
 ---
 
-## DTOs
+## DTOs {dev}
 
 All in `denowatts-backend/src/site-builder/dto/site-builder.input.ts`. They are derived from the schema classes via `PickType`/`OmitType`, so the schema is the source of truth for field types.
 
@@ -228,7 +278,7 @@ All in `denowatts-backend/src/site-builder/dto/site-builder.input.ts`. They are 
 
 ---
 
-## Frontend: how the graph is built (implementation detail)
+## Frontend: how the graph is built (implementation detail) {dev}
 
 State lives in the Redux `siteBuilder` slice (`denowatts-portal/src/store/slices/siteBuilderSlice.ts`). `VsbRegion` and `VsbElementType` are defined there as const string maps (UPPER_SNAKE). Region↔element mapping is `REGION_BY_ELEMENT_TYPE` (slice:116-128).
 
@@ -247,7 +297,7 @@ State lives in the Redux `siteBuilder` slice (`denowatts-portal/src/store/slices
 
 ---
 
-## Business rules
+## Business rules (cited) {dev}
 
 - **Admin/SuperAdmin only, end to end.** Frontend route guard `NonUserRoute` redirects `UserType.User` to `/not-found` — `denowatts-portal/src/views/ProtectedRoute/NonUserRoute.tsx:31-33`. Backend `siteBuilder` query, `updateSiteBuilder` mutation, and `configChannelSiteMap` mutation are all `@Roles(SUPER_ADMIN, ADMIN)` — `site-builder.resolver.ts:13,23` and `channels.resolver.ts:58`.
 - **Exactly one builder row per site.** `SiteBuilder.site` is `unique` — `site-builder.schema.ts:112-117`. `update` upserts on `{ site }`.
@@ -260,7 +310,7 @@ State lives in the Redux `siteBuilder` slice (`denowatts-portal/src/store/slices
 - **Only ACTIVE channels are auto-pre-populated** in the default template — `useSiteBuilderBootstrap.ts:82-83` (`ChannelStatus.Active`).
 - **Template MODULE nodes are deletion-locked** in the UI (`isFixedSolarElement` ⇒ `MODULE`); template block inverters with a `blockNumber` are also locked — `SiteBuilderPage.tsx:835-843`.
 
-## Data touched
+## Data touched {dev}
 
 - **`sitebuilders.site`** — unique key linking the builder row to a site — `site-builder.schema.ts`.
 - **`sitebuilders.flow`** — the working graph; written on every autosave/save (`updateSiteBuilder` → `$set`) — `site-builder.service.ts`.
@@ -269,7 +319,7 @@ State lives in the Redux `siteBuilder` slice (`denowatts-portal/src/store/slices
 - **`channels` (read)** — `name`, `channelId`, `blocks`, `status` are read on the frontend (`GET_CHANNELS` filtered by `sites: [siteId]`) for the palette, validation, and template pre-population.
 - **`sites.blocks` (read)** — drives the default template and the block-drift sync — read via `GET_SITE` on the frontend.
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 
 - **No-op deploy still rewrites everything.** Even if nothing changed, a deploy runs the full bulkWrite + clear-pass over all site channels and re-stamps `lastDeployData`/`lastDeployAt`. The Deploy button is disabled when `hasChangesSinceLastDeploy` is false to avoid this, but the backend itself does not short-circuit.
 - **Empty-flow-with-nodes-but-no-channels clears all siteMaps.** If you deploy a graph whose nodes carry no channel assignments, `mappingByChannelId` is empty and the service nulls every channel's `siteMap` (early-return branch) — `channels.service.ts:1063-1071`. So an "empty" deploy is a valid way to wipe all site maps.
@@ -283,4 +333,22 @@ State lives in the Redux `siteBuilder` slice (`denowatts-portal/src/store/slices
 
 ---
 
-**Related flows:** [[site]] (this is one of the site's sub-tabs; site `blocks` drive the template), [[channels]] (Deploy writes `channel.siteMap`; channels supply the palette and `configChannelSiteMap` lives in the channels service), [[field-setup]] (separate wizard that commissions gateway/Deno hardware — does *not* touch site-builder), [[assets]] (devices behind channels), [[solar-glossary]] (POA/horizontal benchmark, inverter, AC/DC meter, recloser, transformer, coupling, channel-id taxonomy definitions)
+## Solar & platform terminology {dev}
+
+- **Flow / node graph** — the canvas layout: device **nodes** (boxes) connected by **edges** (lines), stored whole as `SiteBuilder.flow`.
+- **Region** — the logical zone a node belongs to: `BENCHMARK`, `SOLAR_BLOCK`, `DISTRIBUTION`, `DC_STORAGE`, or `AC_STORAGE`; copied to `channel.siteMap.region` on deploy.
+- **Element / device type** — what a node represents: horizontal/POA benchmark, module, inverter, DC/AC meter, transformer, battery, tracker, recloser, grid, or coupling.
+- **POA benchmark vs horizontal benchmark** — reference irradiance measured in the plane of the array (POA) vs on the horizontal (GHI); each accepts only its matching channel-id prefix (`1.1.1` vs `1.1.2`/`1.3.2`).
+- **Test point** — a per-channel flag marking benchmark/test metering rather than production data; propagated to `channel.siteMap.testPoint` on deploy.
+- **Block** — one MODULE + INVERTER pair generated from the site's energy-model `blocks`; the "Sync" action keeps canvas pairs aligned with the site's blocks.
+- **Coupling** — a DC/AC storage join node that can be batch-created and snapped onto an existing edge, splicing into the connection.
+- **siteMap** — the `{ region, device, testPoint }` subdocument written onto each channel by Deploy; `null` for channels outside the deployed graph.
+- **Deploy** — the `configChannelSiteMap` mutation (in the channels module) that full-replaces every channel's `siteMap` from the saved flow and snapshots `lastDeployData`/`lastDeployAt`.
+- **Autosave** — the 1200ms-debounced `updateSiteBuilder` call that persists the whole flow graph on every pause in editing.
+- **Channel-id prefix taxonomy** — the dotted `channelId` prefixes (`1.1.1`, `1.1.2`, `1.3.2`, `3.1`, `5.2.1`) that drive drop validation and template pre-population.
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[site]] · [[channels]] · [[field-setup]] · [[assets]] · [[solar-glossary]]

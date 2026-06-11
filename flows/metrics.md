@@ -1,8 +1,74 @@
+---
+title: Metrics
+owner: alamin-nifty
+status: draft
+version: 2
+updated_at: 2026-06-10
+---
+
 # Metrics
 
-**What it does (business):** A "metric" is the canonical definition of a measured quantity the platform reports on — energy, power, irradiance, temperature, availability, scaling factors, KPIs, etc. Each metric ties a machine name (e.g. `wattsAvgGlob`) to a human display name, a unit, the channel prefixes that produce it, optional value ranges, classification tags, and — for KPIs — a calculation expression. Metric definitions are the shared vocabulary that channels, raw/rollup data, analytics charts, alarms and reports all key off of by `name`.
+A **metric** is one named quantity the platform measures or computes — energy produced, AC power, irradiance, a temperature, an availability percentage, a scaling factor. The metrics catalog is the platform's shared vocabulary: every metric pairs a machine name with a human-friendly display name and a unit, notes which kinds of devices produce it, and can carry classification tags. Charts, reports, alarms, and raw data all refer to measurements by these names.
 
-**Entry point(s):**
+Some metrics are not measured at all but **calculated**: a KPI metric carries a formula built from other metrics, numbers, and site properties (like nameplate capacity), and the reporting engine evaluates it on the fly. Companies can also have their own preferred name for any metric, which the platform substitutes when showing data to that company.
+
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what metrics are, how the catalog is organized, and who can change it. *Developer* adds the full GraphQL surface, services, schemas and DTOs, a module-duplication finding, consumer map, file references, and a solar-terminology primer.
+
+---
+
+## Why this matters
+
+Every number anyone sees in the product traces back to a metric definition. If a metric's unit or display name is wrong, it's wrong on every chart, report, and alarm that uses it. Because everything joins on the metric's machine name, the catalog is foundational data — renaming or duplicating a metric ripples across the whole platform, which is why creation is tightly restricted and names must be unique.
+
+---
+
+## What a metric definition contains
+
+In plain terms, each catalog entry records:
+
+- **A machine name** — the unique key everything else joins on (never shown to end users).
+- **A display name and unit** — what people actually see (e.g. a label plus kWh or W/m²).
+- **Which device families produce it** — a list of channel-namespace prefixes, so filtering by a device family finds all of its metrics.
+- **Tags** — classifications like expected/learned/predicted, instantaneous/cumulative, internal/external, outage types.
+- **An optional description and zone** — free text and an analytical-zone scope.
+- **For KPIs: a formula** — an ordered expression of metrics, arithmetic operators, numbers, and site properties.
+- **Optional plausible value bounds** — a min/max range can be entered in the admin UI, but these currently do not save (a known incomplete feature, flagged for review).
+
+---
+
+## Per-company display names
+
+A company can have its own preferred name for a metric (client phrasing). These translations are stored separately per company, and when the catalog is fetched on behalf of a company, the platform injects the company's name alongside the standard one. The translation never alters the metric itself — it's an overlay applied at read time.
+
+---
+
+## KPI metrics
+
+KPI metrics are derived values: instead of being read from a sensor, they're computed from a formula — for example, one metric divided by another times 100 to get a percentage. Formulas can also reference site properties such as nameplate capacity or power rate. When a report requests a KPI, the reporting engine automatically pulls in whatever underlying metrics the formula needs, even if the requester didn't ask for them explicitly.
+
+---
+
+## Who can do what
+
+- **Anyone (even without signing in)** can read the metric catalog — the list queries are public.
+- **Any signed-in user** can view live channel metrics, scaling-factor lists, and the unit list; updating an existing metric also only requires being signed in.
+- **Platform super-admins only** can create new metrics and use the naming helpers (prefix catalog, next-name suggestion).
+- **Company name translations** are managed through their own separate operations.
+
+---
+
+## The rules that matter
+
+- **Metric names are globally unique** — a duplicate name is rejected at creation, with a database constraint as backstop.
+- **Names are required and trimmed** — an empty name is rejected.
+- **Scaling factors are recognized purely by naming convention** — any metric whose name starts with "sf" is treated as a scaling factor.
+- **Company-specific names are never stored on the metric** — they're computed at query time from the per-company translation list.
+- **Filtering by device family is hierarchical** — asking for a parent namespace also matches metrics tagged with its sub-namespaces.
+- **For developers:** there is a known code-duplication finding in this module (a dead second copy of the logic that drifts from the live one) — details in the developer view.
+
+---
+
+## Entry points {dev}
 - Metric admin (CRUD): Settings → Metrics Management — `denowatts-portal/src/pages/dashboard/settings/metrics-management/MetricsManagementPage.tsx`, route `/settings/metrics-management` (SuperAdmin only, wrapped in `ProtectedRoute` — `denowatts-portal/src/router.tsx:426`).
 - Standalone read-only metric library: route `/metrics` — `denowatts-portal/src/pages/metrics/MetricsPage.tsx` (`denowatts-portal/src/router.tsx:606`).
 - Channel-status "live metrics" table: `denowatts-portal/src/pages/dashboard/status/channel-status/components/ChannelMetricsTable.tsx` (consumes `getChannelMetrics`).
@@ -10,7 +76,7 @@
 
 ---
 
-## ⚠️ Module duplication note
+## ⚠️ Module duplication note {dev}
 
 There are **two** `MetricsResolver` + `MetricsService` class pairs in the backend, with byte-for-byte near-identical logic:
 
@@ -36,7 +102,7 @@ Recommendation flagged for humans: delete `src/assets/metrics.resolver.ts`, `src
 
 ---
 
-## What a metric is
+## What a metric is {dev}
 
 Defined in `denowatts-backend/src/metrics/schemas/metric.schema.ts`. Collection: `metrics` (Mongoose default pluralization; confirmed by the `$lookup ... from: "metrics"` in report and metrics aggregations).
 
@@ -57,7 +123,7 @@ A metric record carries:
 
 ---
 
-## GraphQL API surface
+## GraphQL API surface {dev}
 
 All operations are defined on `MetricsResolver` — `denowatts-backend/src/metrics/metrics.resolver.ts`. Company-translation operations live on a separate resolver in the assets module (see below).
 
@@ -126,7 +192,7 @@ These manage the per-company name translations used by `findAll`/`paginate`. Res
 
 ---
 
-## Services
+## Services {dev}
 
 ### MetricsService — `denowatts-backend/src/metrics/metrics.service.ts`
 
@@ -205,7 +271,7 @@ Thin CRUD over the `companymetrics` collection: `getCompanyMetrics()` (`find()`)
 
 ---
 
-## Schemas
+## Schemas {dev}
 
 ### Metric — `denowatts-backend/src/metrics/schemas/metric.schema.ts`
 `@Schema({ timestamps: true, autoIndex: true })`. Collection `metrics`.
@@ -260,7 +326,7 @@ Expression order defines the calculation, e.g. `[metric, "/", metric, "*", 100]`
 
 ---
 
-## DTOs — `denowatts-backend/src/metrics/dto/metric.input.ts`
+## DTOs — `denowatts-backend/src/metrics/dto/metric.input.ts` {dev}
 (Re-exported unchanged from `src/assets/dto/metric.input.ts`.)
 
 ### UpdateMetricInput — `:8`
@@ -312,7 +378,7 @@ Extends `Metric`, adds: `channelLastRawRecord` (string?, latest raw value as str
 
 ---
 
-## Consumers (who uses metric definitions)
+## Consumers (who uses metric definitions) {dev}
 
 Metric definitions are foundational; multiple modules read the `metrics` collection (joining by `name` or `_id`):
 
@@ -331,7 +397,7 @@ Metric definitions are foundational; multiple modules read the `metrics` collect
 
 ---
 
-## Business rules
+## Business rules (cited) {dev}
 - Metric `name` is globally unique — enforced at app level in `create` and by a unique Mongo index — `src/metrics/metrics.service.ts:249`, `src/metrics/schemas/metric.schema.ts:174`.
 - `name` is required and trimmed; empty names are rejected — `src/metrics/metrics.service.ts:244`.
 - `update` does **not** re-validate name uniqueness in code; only the unique index would catch a duplicate rename — `src/metrics/metrics.service.ts:258`.
@@ -343,14 +409,14 @@ Metric definitions are foundational; multiple modules read the `metrics` collect
 - `getChannelMetrics` lookback window differs by source: Modbus uses `reportInterval × 2.5` minutes, others a fixed 5 minutes — `src/metrics/metrics.service.ts:293`.
 - KPI metrics carry an `expression`; their operands are auto-included by the report engine even if not explicitly requested — `src/report/report.service.ts:467`.
 
-## Data touched
+## Data touched {dev}
 - `metrics.*` — full metric CRUD/read; unique `name` index; `paginate` sorts by `updatedAt` — `src/metrics/metrics.service.ts`, `src/metrics/schemas/metric.schema.ts`.
 - `companymetrics.{company, metrics:[{metric,name}]}` — read via `$lookup` to compute `companyWiseName`; CRUD via `CompanyMetricService` — `src/metrics/metrics.service.ts:101`, `src/assets/company-metric.service.ts`.
 - `settings` (doc `setting: "METRIC_PREFIX"`) — read-only for `getMetricPrefixes` — `src/metrics/metrics.service.ts:359`.
 - `channels` — read to resolve a channel + its Modbus metric config in `getChannelMetrics` — via ChannelsService.
 - `channelraws` — read latest + windowed raw records to attach live values to channel metrics — `src/metrics/metrics.service.ts:275,306`.
 
-## Edge cases & gotchas
+## Edge cases & gotchas {dev}
 - **`minRange` / `maxRange` are not persisted.** They are declared as GraphQL fields on `Metric` with no `@Prop`, so `create`/`update` accept them in input and they appear in the schema, but Mongoose will not store them (no schema path). UI sends them (MetricsManagementPage `handleSubmit` includes `minRange`/`maxRange`) but they will not round-trip. **Flag for human review** — likely an intended-but-incomplete field.
 - **Two duplicate resolver/service pairs** (see top section). The assets copies are dead but actively drift from the live ones; risk of someone editing the wrong file.
 - **`getChannelMetrics` swallows the specific "Channel not found" error**: the inner `throw new BadRequestException("Channel not found")` is caught by the surrounding try/catch and rethrown as the generic `"Failed to fetch channel metrics"`, so the frontend never sees the specific cause.
@@ -361,4 +427,24 @@ Metric definitions are foundational; multiple modules read the `metrics` collect
 - **Distinct units / search are case-sensitive on storage**: `getDistinctUnits` only trims (does not normalize case), so `"kWh"` and `"kwh"` would be distinct entries; `paginate` search is case-insensitive.
 - **Non-Modbus channel metric discovery** uses raw-record object keys, which include non-metric keys like `timestamp`/`metadata`; those simply won't match any metric `name` in the `$in` lookup, so they're filtered out implicitly.
 
-**Related flows:** [assets.md](assets.md) · [report.md](report.md) · [data-out.md](data-out.md) · [channels.md](channels.md) · [settings.md](settings.md) · [status.md](status.md) · [solar-glossary.md](solar-glossary.md)
+---
+
+## Solar & platform terminology {dev}
+
+- **Metric** — a named, unit-bearing quantity the platform measures or computes; the catalog entry this module manages.
+- **Machine name (`name`)** — the unique key (e.g. `wattsAvgGlob`, `sf1`) stored as object keys in raw/rollup documents and joined on everywhere.
+- **Display name / unit** — the human-facing label and unit string (e.g. `kWh`, `W/m²`) shown in UI, charts, and reports.
+- **Channel prefix** — a dotted namespace (e.g. `denoa.energy`) declaring which channel families emit a metric; filters are hierarchically expanded up the namespace tree.
+- **KPI metric** — a derived metric (`isKpi: true`) computed from an `expression` rather than read from data.
+- **Expression** — the ordered formula of a KPI: metric refs, operators (`+ - * /`), number literals, and site properties (`acNameplate`, `dcCapacity`, `powerRate`), evaluated per data row by the report engine. See [[report]].
+- **Scaling factor (`sf`)** — a multiplier metric identified purely by the `^sf` name convention; surfaced via `scalingMetrics`.
+- **Tags** — `MetricTags` enum values classifying a metric (EXPECTED, LEARNED, PREDICTED, INSTANTANEOUS, CUMULATIVE, DC_OUTAGE, AC_OUTAGE, …).
+- **Company-wise name** — a per-company alias for a metric, stored in `companymetrics` and injected at query time as `companyWiseName`; never persisted on the metric.
+- **Metric prefix catalog** — the `METRIC_PREFIX` settings document mapping base name prefixes to display names/units, used for auto-naming in the Modbus template builder. See [[settings]].
+- **Raw record** — a `channelraw` document; `getChannelMetrics` attaches each metric's latest raw value and timestamp. See [[data-out]].
+
+For the full domain vocabulary, see [[solar-glossary]].
+
+---
+
+**Related flows:** [[assets]] · [[report]] · [[data-out]] · [[channels]] · [[settings]] · [[status]] · [[device-types]] · [[solar-glossary]]
