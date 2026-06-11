@@ -43,6 +43,25 @@ const SECTIONS = sections.map((s) => {
   }
 })
 
+// Full-text index over the rendered docs, one entry per mode-section, built
+// once at module load. Powers content search: each entry knows its heading
+// anchor and audience so a hit can deep-link (and flip to Developer mode when
+// the match lives in a {dev} section).
+const stripTags = (h) => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+const DOC_INDEX = SECTIONS.flatMap((s) => {
+  if (!s.doc) return []
+  return s.doc.html
+    .split(/(?=<section class="doc-sec")/)
+    .map((chunk) => {
+      const aud = (chunk.match(/data-aud="(\w+)"/) || [])[1] || 'all'
+      const id = (chunk.match(/<h[23] id="([^"]+)"/) || [])[1] || null
+      const heading = stripTags((chunk.match(/<h2[^>]*>([\s\S]*?)<\/h2>/) || [, ''])[1]) || s.title
+      const text = stripTags(chunk)
+      return { key: s.key, sTitle: s.title, aud, id, heading, text, lower: text.toLowerCase() }
+    })
+    .filter((c) => c.text)
+})
+
 const ICONS = {
   lock: 'M6 10V7a6 6 0 1 1 12 0v3M4 10h16v11H4z',
   grid: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
@@ -134,8 +153,29 @@ export default function DocsPortal() {
         if (hay.includes(term)) hits.push({ type: 'page', s, p })
       }
     }
+    // Full-text hits inside the docs themselves, capped to keep the list sane.
+    let docHits = 0
+    for (const c of DOC_INDEX) {
+      if (docHits >= 25) break
+      const i = c.lower.indexOf(term)
+      if (i === -1) continue
+      const start = Math.max(0, i - 60)
+      const snippet = (start > 0 ? '…' : '') + c.text.slice(start, i + term.length + 100).trim() + '…'
+      hits.push({ type: 'doc', s: SECTIONS.find((x) => x.key === c.key), c, snippet })
+      docHits += 1
+    }
     return hits
   }, [term])
+
+  // Open a search hit: clear the search, jump to the section, flip to
+  // Developer mode when the match lives in a {dev}-only chunk, then scroll
+  // to the matched heading once the doc has rendered.
+  const openHit = useCallback((key, c) => {
+    setQuery('')
+    if (c && c.aud === 'dev' && mode !== 'dev') onMode('dev')
+    go(key)
+    if (c?.id) setTimeout(() => document.getElementById(c.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 180)
+  }, [mode, onMode, go])
 
   const documentedCount = SECTIONS.filter((s) => s.documented).length
 
@@ -205,7 +245,7 @@ export default function DocsPortal() {
           <Logo />
         </div>
         {searchHits
-          ? <SearchResults hits={searchHits} term={term} onPick={go} />
+          ? <SearchResults hits={searchHits} term={term} onPick={openHit} />
           : activeSection
             ? <SectionView key={activeSection.key} section={activeSection} onHome={() => go(null)}
                 activePage={activePage} onSelectPage={(route) => setActivePage(route)}
@@ -451,10 +491,16 @@ function SearchResults({ hits, term, onPick }) {
         : (
           <div className="results">
             {hits.map((h, i) => (
-              <button key={i} className="result" onClick={() => onPick(h.s.key)}>
-                <span className="result-kind">{h.type === 'section' ? 'Section' : 'Page'}</span>
-                <span className="result-title">{h.type === 'section' ? h.s.title : h.p.name}</span>
-                <span className="result-ctx">{h.type === 'section' ? h.s.summary : h.p.purpose}</span>
+              <button key={i} className="result" onClick={() => onPick(h.s.key, h.type === 'doc' ? h.c : null)}>
+                <span className="result-kind">{h.type === 'section' ? 'Section' : h.type === 'page' ? 'Page' : 'In doc'}</span>
+                <span className="result-title">
+                  {h.type === 'section' ? h.s.title
+                    : h.type === 'page' ? h.p.name
+                      : `${h.s.title} › ${h.c.heading}`}
+                </span>
+                <span className="result-ctx">
+                  {h.type === 'section' ? h.s.summary : h.type === 'page' ? h.p.purpose : h.snippet}
+                </span>
                 {h.type === 'page' && <code className="route">{h.p.route}</code>}
               </button>
             ))}
