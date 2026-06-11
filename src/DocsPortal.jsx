@@ -20,6 +20,15 @@ const FLOWS = Object.fromEntries(
 // keys ignoring spaces/case ("Field Setup" -> "FieldSetup", "Device Types" ->
 // "DeviceTypes"), so human-entered module labels still attach.
 const normKey = (x) => String(x || '').replace(/\s+/g, '').toLowerCase()
+
+// doc basename (sans .md) → { key, title }, so [[wikilinks]] and relative
+// .md links inside docs resolve to in-app section links.
+const FLOW_MAP = Object.fromEntries(
+  sections
+    .filter((s) => s.flow)
+    .map((s) => [s.flow.split('/').pop().replace(/\.md$/, '').toLowerCase(), { key: s.key, title: s.title }]),
+)
+
 const SECTIONS = sections.map((s) => {
   const subPages = pages
     .filter((p) => normKey(p.module) === normKey(s.key))
@@ -29,7 +38,7 @@ const SECTIONS = sections.map((s) => {
   return {
     ...s,
     pages: subPages,
-    doc: rawMd ? renderDoc(rawMd) : null,
+    doc: rawMd ? renderDoc(rawMd, FLOW_MAP) : null,
     documented: Boolean(rawMd),
   }
 })

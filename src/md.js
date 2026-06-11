@@ -74,9 +74,24 @@ function wrapSections(html) {
     .join('')
 }
 
-export function renderDoc(md) {
+export function renderDoc(md, flowMap = {}) {
   const { meta, body } = parseFrontmatter(md)
   let html = marked.parse(stripLeadingH1(body))
+
+  // [[name]] wikilinks → in-app section links (flowMap: doc basename sans .md
+  // → { key, title }). Unknown names degrade to plain prettified text.
+  html = html.replace(/\[\[([a-z0-9-]+)\]\]/gi, (_m, name) => {
+    const hit = flowMap[name.toLowerCase()]
+    if (hit) return `<a class="wikilink" href="#/${hit.key}">${hit.title}</a>`
+    return name.replace(/-/g, ' ')
+  })
+
+  // Relative markdown links to sibling docs ("site.md", "flows/site.md") →
+  // the same in-app section links instead of 404ing the SPA.
+  html = html.replace(/<a href="(?:flows\/)?([a-z0-9-]+)\.md"/gi, (m, name) => {
+    const hit = flowMap[name.toLowerCase()]
+    return hit ? `<a class="wikilink" href="#/${hit.key}"` : m
+  })
   const toc = []
   const seen = {}
   let curAud = 'all' // the audience of the most recent <h2>, inherited by its <h3>s
@@ -102,7 +117,21 @@ export function renderDoc(md) {
     return `<${tag} id="${id}"${da}>${innerClean}</${tag}>`
   })
 
+  // Hoist the trailing "Related flows" paragraph out of whatever section it
+  // physically follows (usually a {dev} one) so it stays visible in every
+  // mode — it's navigation, not technical detail.
+  let footer = ''
+  const fi = html.lastIndexOf('<p><strong>Related flows:')
+  if (fi !== -1) {
+    const fe = html.indexOf('</p>', fi)
+    if (fe !== -1) {
+      footer = html.slice(fi, fe + 4)
+      html = html.slice(0, fi) + html.slice(fe + 4)
+    }
+  }
+
   html = wrapSections(html)
+  if (footer) html += `<section class="doc-sec" data-aud="all">${footer}</section>`
 
   // Distinguish source-file citations (e.g. `path/to/file.ts:42`, or a bare
   // `:200` continuation) from ordinary inline code like `PENDING` or `USER`,

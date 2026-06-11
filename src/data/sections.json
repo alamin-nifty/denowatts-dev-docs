@@ -222,5 +222,13 @@
     "flow": "flows/solar-glossary.md",
     "group": "Reference",
     "summary": "The domain vocabulary — irradiance, POA, EPI, capacity tests, channels and more, defined in one place."
+  },
+  {
+    "key": "ReviewFindings",
+    "title": "Review Findings",
+    "icon": "wrench",
+    "flow": "flows/REVIEW-FINDINGS.md",
+    "group": "Reference",
+    "summary": "Everything the documentation passes flagged for human review — security items, likely bugs, placeholders and cleanups, prioritized."
   }
 ]
