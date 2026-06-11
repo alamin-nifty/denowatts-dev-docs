@@ -2,7 +2,7 @@
 title: Field Setup
 owner: alamin-nifty
 status: draft
-version: 3
+version: 4
 updated_at: 2026-06-10
 ---
 
@@ -17,6 +17,32 @@ Field Setup is the **on-site commissioning wizard** a technician uses to bring a
 ## Why this matters
 
 A monitoring platform is only as good as the data coming in, and that data starts at a physical install in a field somewhere. Field Setup exists so a technician — often not an engineer — can stand on site and, in a guided flow, get the hardware configured and **prove** it's reporting before they drive away. Catching a dead sensor or a bad network setting on site is cheap; catching it a week later from the office means a second truck roll.
+
+---
+
+## How the data flows
+
+```mermaid
+sequenceDiagram
+    participant Tech as Technician (on site)
+    participant Portal as Portal (phone/browser)
+    participant Backend
+    participant Files as Site file area
+    Tech->>Portal: Pick site + gateway (must already exist)
+    Portal->>Backend: Find that gateway
+    Backend-->>Portal: Gateway confirmed (site locks for the run)
+    Tech->>Portal: Set gateway network (DHCP or static)
+    Portal->>Backend: Save network settings
+    Tech->>Portal: Name and configure each Deno sensor
+    Portal->>Backend: Save sensor config
+    Tech->>Portal: Take install photos + add notes
+    Note over Portal: Photos compressed on the phone first
+    Portal->>Files: Store photos in the site's file area
+    Portal->>Backend: Write photo filenames onto the channel,<br/>log a maintenance event
+    Tech->>Portal: Run the 10-minute verification
+    Portal->>Backend: Count raw readings per sensor, once a minute
+    Backend-->>Portal: Rising non-zero counts = the install is reporting
+```
 
 ---
 

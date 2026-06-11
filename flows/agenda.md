@@ -2,7 +2,7 @@
 title: Agenda (Job Scheduler)
 owner: alamin-nifty
 status: draft
-version: 2
+version: 3
 updated_at: 2026-06-10
 ---
 
@@ -19,6 +19,23 @@ Today its single real job is **scheduled report delivery**: every active report 
 ## Why this matters
 
 Reports that arrive in inboxes "every morning" or "on the first of the month" only happen because something fires reliably on schedule. Agenda is that something: it decides when each scheduled report actually runs, how late it can be, what happens when the platform restarts mid-schedule, and why a disabled template quietly stops sending.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart LR
+    BOOT["App boots"] --> SCHED["Background scheduler"]
+    SCHED -->|"connects to"| JOBS[("Job collection<br/>in the database")]
+    TPL["Report template<br/>created / updated / deleted"] -->|"registers or<br/>cancels its job"| JOBS
+    JOBS -->|"due jobs picked up<br/>every poll interval"| RUN["Report generation"]
+    RUN --> DELIVER["Email delivery<br/>to recipients"]
+    BOOT -.-> TIMER["Lightweight in-process timer<br/>(every 30 minutes)"]
+    TIMER -.-> QB["Accounting-credential<br/>refresh"]
+```
+
+Schedules live in the database, so they survive restarts; the dashed branch is a separate in-process timer that runs beside the scheduler, not through it.
 
 ---
 

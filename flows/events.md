@@ -2,7 +2,7 @@
 title: Events
 owner: alamin-nifty
 status: draft
-version: 2
+version: 3
 updated_at: 2026-06-10
 ---
 
@@ -17,6 +17,22 @@ An **event** is one entry on a solar site's timeline — an operator note, an al
 ## Why this matters
 
 The events feed is the site's institutional memory. When production dips, the first question is always "what happened?" — and the answer lives here: an alarm that opened, a maintenance visit, a grid outage, a note someone left. Tickets routed through events are how customers ask for help, and data-curation events are how operators correct the site's reported numbers. If events are wrong or missing, the story of the site is wrong.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart LR
+    PPL["People in the portal"] -->|"notes, maintenance,<br/>tickets, task flags"| EV[("Event timeline<br/>(the site logbook)")]
+    PIPE["Upstream alarm pipeline"] -->|"alarms, pre-flagged<br/>with severity"| EV
+    EV --> FEED["Events feed and<br/>event detail pages"]
+    FEED -->|"comments, @-mentions, upvotes,<br/>acknowledge / close"| EV
+    EV --> ROLL["Portfolio and status<br/>feeds and counts"]
+    EV -->|"new events, comments,<br/>mentions"| NOTIF["Emails and in-app<br/>bell notifications"]
+```
+
+Events enter the timeline two ways — created by people in the portal or arriving pre-flagged from the alarm pipeline — and everything downstream (feeds, rollups, notifications) reads from that one logbook.
 
 ---
 

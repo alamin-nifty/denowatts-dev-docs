@@ -27,6 +27,28 @@ Authentication isn't just "security tech." It's how DenoWatts guarantees four th
 
 ---
 
+## How the data flows
+
+```mermaid
+sequenceDiagram
+    participant Person
+    participant Portal as Portal (browser)
+    participant API as Backend
+    participant DB as Database
+    Person->>Portal: Email + password
+    Portal->>API: Sign-in request
+    API->>DB: Look up account, verify password
+    DB-->>API: Account (must be ACTIVE)
+    API-->>Portal: Access pass (1 day) + renewal pass (7 days)
+    Note over Portal: Passes stored in the browser and<br/>sent with every request
+    Portal->>API: ...later: request with an expired pass
+    API-->>Portal: Pass expired
+    Portal->>API: Silent renewal using the 7-day pass
+    API-->>Portal: Fresh access pass (person notices nothing)
+```
+
+---
+
 ## Roles: three levels of access
 
 Every person has exactly one role. It travels with them everywhere in the portal.

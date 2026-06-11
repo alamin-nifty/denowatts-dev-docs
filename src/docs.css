@@ -717,3 +717,8 @@ body {
   .toc-link { font-size: 12px; padding: 3px 10px; }
   .toc-l3 { padding-left: 20px; font-size: 11.5px; }
 }
+
+/* Mermaid data-flow diagrams */
+.prose .mermaid { display: flex; justify-content: center; margin: 20px 0 26px; overflow-x: auto; }
+.prose .mermaid svg { max-width: 100%; height: auto; }
+.prose .mermaid:not([data-processed]) { color: transparent; min-height: 40px; }

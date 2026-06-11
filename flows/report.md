@@ -2,7 +2,7 @@
 title: Report
 owner: alamin-nifty
 status: draft
-version: 2
+version: 3
 updated_at: 2026-06-10
 ---
 
@@ -17,6 +17,24 @@ A **report** is a scheduled (or on-demand) performance summary for a fleet of so
 ## Why this matters
 
 Reports are how performance leaves the platform and lands in stakeholders' inboxes. An asset manager who never logs in still gets a monthly Excel showing how every site performed — production, expected production, availability, performance indices. Because the numbers come from the same daily rollup data that powers the dashboards, the emailed report and the on-screen view always agree. Getting templates right (the correct sites, period, and KPI math) is what makes those numbers trustworthy.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart TD
+    ADMIN["Admin defines a report template<br/>(sites, columns, period, recipients)"] --> TPL[("Saved templates")]
+    TPL -->|"one recurring job<br/>per active template"| SCHED["Background scheduler"]
+    SCHED -->|"on schedule"| GEN["Report generation"]
+    ONDEMAND["On-demand / test run"] -.-> GEN
+    ROLLUP[("Daily rollup data")] --> GEN
+    GEN --> KPI["KPI and custom-column math<br/>(totals recomputed from sums)"]
+    KPI --> XLS["Excel workbook<br/>(fleet summary)"]
+    XLS --> EMAIL["Emailed to recipients"]
+```
+
+On-demand and test runs follow the same generation path as scheduled runs — only the trigger differs.
 
 ---
 

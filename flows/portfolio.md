@@ -2,7 +2,7 @@
 title: Portfolio
 owner: alamin-nifty
 status: draft
-version: 3
+version: 4
 updated_at: 2026-06-10
 ---
 
@@ -23,6 +23,26 @@ A company may run dozens or hundreds of solar sites. Nobody can babysit each one
 - **Where do I start?** — sort the noise into a short list of sites that genuinely need a human.
 
 It's read-only by design: a control tower, not a control panel. Every number is a doorway into the page where you actually do the work.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart TD
+    PAGE["Portfolio page"] -->|"one batched request"| BE["Backend"]
+    SITES[("Sites<br/>stored connection status")] --> BE
+    EV[("Events")] --> BE
+    ING["External ingestion service"] -.->|"writes connection status"| SITES
+    BE -->|"site list + per-site counts"| MAP["Fleet map"]
+    BE -->|"service-status rollup"| T1["Service-status table"]
+    BE -->|"open-alarm rollup by type"| T2["Open-alarm table"]
+    MAP -.->|"click a pin"| SITE["Site detail page"]
+    T1 -.->|"click a number"| DRILL["Status list or events feed"]
+    T2 -.->|"click a number"| DRILL
+```
+
+One screen, one request: the backend assembles all three feeds from the same site and event records, and every number on the page is a doorway to a deeper view.
 
 ---
 

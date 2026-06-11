@@ -2,7 +2,7 @@
 title: Channels
 owner: alamin-nifty
 status: draft
-version: 2
+version: 3
 updated_at: 2026-06-10
 ---
 
@@ -17,6 +17,23 @@ A **channel** is a single data stream coming from a piece of hardware at a solar
 ## Why this matters
 
 If a channel is misconfigured or offline, everything downstream is wrong — the chart is blank, the alarm never fires, the report under-counts. Channels are where data quality is won or lost, so the module carries a lot of responsibility: it tracks whether each stream is connected, counts its alarms, places it on the site map, holds its installation photos, and can even diagnose inverter faults in plain language. Getting channels right is the difference between a site you can trust and one you can't.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart LR
+    HW["Site hardware<br/>(Deno, gateway, Modbus,<br/>OPC, cell modem)"] --> ING["Readings ingested<br/>(external pipeline)"]
+    ING --> DATA[("Measurements stored<br/>against each channel")]
+    HW --> CH[("Channel record<br/>(config, status, photos, notes)")]
+    TPL[("Shared template library<br/>(register maps)")] -.->|"Modbus/OPC channels<br/>inherit a template"| CH
+    SB["Site Builder deploy"] -->|"stamps map positions"| CH
+    CH --> STATUS["Status dashboard +<br/>alarm counts per channel"]
+    DATA --> DOWN["Charts, alarms, reports"]
+```
+
+Every piece of hardware is represented by a channel record; readings flow in against it, while its config, template, map position, and status are read everywhere downstream.
 
 ---
 

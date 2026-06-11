@@ -1,8 +1,11 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import mermaid from 'mermaid'
 import sections from './data/sections.json'
 import pages from './data/pages.generated.json'
 import aliasMap from './data/aliases.json'
 import { renderDoc } from './md.js'
+
+mermaid.initialize({ startOnLoad: false, theme: 'neutral', fontFamily: 'inherit' })
 
 // Eagerly pull every flow doc's raw markdown at build time, keyed by basename
 // (e.g. "authentication.md"). Adding a new flows/*.md file needs no code change.
@@ -439,6 +442,15 @@ const tocVisible = (toc, mode) =>
 function FlowDoc({ doc, mode }) {
   const visibleToc = tocVisible(doc.toc, mode)
   const [activeId, setActiveId] = useState(visibleToc[0]?.id || null)
+
+  // Render mermaid diagrams. The article is keyed by mode, so a mode switch
+  // remounts fresh unprocessed nodes; only visible ones are run (hidden
+  // {dev}-section diagrams would render with zero dimensions).
+  useEffect(() => {
+    const nodes = [...document.querySelectorAll('.prose .mermaid')]
+      .filter((n) => n.offsetParent !== null && !n.getAttribute('data-processed'))
+    if (nodes.length) mermaid.run({ nodes }).catch(() => { /* leave source text visible */ })
+  }, [doc, mode])
   useEffect(() => {
     const ids = tocVisible(doc.toc, mode).map((t) => t.id)
     if (!ids.length) return

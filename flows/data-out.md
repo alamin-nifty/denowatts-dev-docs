@@ -22,6 +22,26 @@ This module is the product's data faucet. If the rollups are wrong or slow, ever
 
 ---
 
+## How the data flows
+
+```mermaid
+flowchart LR
+    HW["Site hardware<br/>(gateways and sensors)"] --> ING["Ingestion pipeline<br/>(external service)"]
+    ING --> RAW[("Raw readings")]
+    ING --> CR[("Channel rollups")]
+    ING --> SR[("Site rollups")]
+    ING --> DR[("Daily rollups")]
+    RAW --> LIVE["Live data and<br/>install verification"]
+    CR --> CHARTS["Charting services"]
+    SR --> CHARTS
+    DR --> REPORTS["Fleet reports"]
+    RAW --> APIOUT["Public customer API<br/>(API key + IP whitelist)"]
+    CR --> APIOUT
+    SR --> APIOUT
+```
+
+---
+
 ## The four data feeds
 
 Data is available at four levels of detail:

@@ -2,7 +2,7 @@
 title: Alarm Config
 owner: alamin-nifty
 status: draft
-version: 2
+version: 3
 updated_at: 2026-06-10
 ---
 
@@ -17,6 +17,23 @@ An **alarm rule** describes a condition that should raise an alarm anywhere in t
 ## Why this matters
 
 Alarms are how the platform tells you something is wrong before the monthly report does. The rule catalog decides what counts as "wrong", how urgent it is, and — through severity — who gets emailed or pinged when an alarm opens or closes. A badly tuned rule either floods inboxes or stays silent while a site loses production. The portfolio dashboard's open-alarm summary is read directly off this catalog.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart TD
+    ADMIN["Platform administrators"] -->|"author rules: target,<br/>severity, threshold"| CAT[("Alarm rule catalog<br/>(global, one per fleet)")]
+    CAT -.->|"rules"| PIPE["Upstream evaluation pipeline<br/>(outside this platform)"]
+    MEAS["Site measurements"] --> PIPE
+    PIPE -->|"alarm events arrive<br/>pre-flagged with<br/>rule + severity"| EVENTS[("Alarm events")]
+    EVENTS --> DASH["Portfolio dashboard<br/>open-alarm rollup per rule"]
+    CAT -->|"only rule name +<br/>support flag"| DISPATCH["Alarm notification dispatch"]
+    EVENTS --> DISPATCH
+```
+
+The platform authors and displays the rules; the actual threshold checking happens in the upstream pipeline, and alarms come back already classified.
 
 ---
 

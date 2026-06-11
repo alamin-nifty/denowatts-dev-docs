@@ -2,7 +2,7 @@
 title: Site Builder
 owner: alamin-nifty
 status: draft
-version: 2
+version: 3
 updated_at: 2026-06-10
 ---
 
@@ -19,6 +19,24 @@ It sits between two neighbouring features: Field Setup commissions the physical 
 ## Why this matters
 
 Charts, status views, and analyses downstream need to know whether a given data stream is a benchmark irradiance sensor, an inverter, the production meter, or a battery coupling. That knowledge isn't in the raw data — it comes from the layout an administrator draws here and deploys onto the channels. A site that's never been deployed (or deployed wrong) leaves its channels without a role, and anything that groups data by region or device works with less context.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart TD
+    ADMIN["Admin"] -->|"lays out topology"| CANVAS["Builder canvas"]
+    CANVAS -->|"auto-saved"| FLOW[("Saved layout<br/>one flow graph per site")]
+    ADMIN -->|"presses Deploy"| DEPLOY["Deploy"]
+    FLOW -->|"graph walked"| DEPLOY
+    DEPLOY -->|"writes each channel's<br/>site-map position - full replace"| CH[("Channels")]
+    DEPLOY -.->|"unplaced channels cleared"| CH
+    DEPLOY -->|"keeps a snapshot"| SNAP[("Last-deployed layout")]
+    SNAP -.->|"powers Revert"| CANVAS
+```
+
+Drawing only touches the saved layout; nothing reaches the channels until Deploy walks the graph and stamps — or clears — every channel's position.
 
 ---
 

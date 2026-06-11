@@ -2,7 +2,7 @@
 title: Site
 owner: alamin-nifty
 status: draft
-version: 3
+version: 4
 updated_at: 2026-06-10
 ---
 
@@ -25,6 +25,25 @@ The site record is the anchor of the whole product. Get it right and every downs
 - **Where it is in its life** — from quoted, to shipped, to commissioning, to fully live.
 
 Because so much depends on it, editing a site is tightly controlled (see *Who can see and edit a site*).
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart TD
+    CO["Owning company"] -->|"owns or grants access"| SITE[("Site record<br/>identity, location, blocks,<br/>energy model")]
+    CREATE["Create site"] --> SITE
+    CREATE -->|"auto-provisions"| WX["Weather channel"]
+    EDIT["Admin edit"] --> SITE
+    EDIT -.->|"production only"| CRM["CRM sync"]
+    CT["Capacity-test file upload"] -->|"replaces wholesale"| PRED[("Predicted hourly curve")]
+    SITE --- PRED
+    DEL["Soft delete"] -->|"marks removed, record kept"| SITE
+    DEL -.->|"archives"| EV[("Site events")]
+```
+
+The site record is the hub; creating, editing, uploading to, or deleting it each ripples out to a different spoke.
 
 ---
 

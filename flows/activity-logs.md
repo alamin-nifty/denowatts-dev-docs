@@ -2,7 +2,7 @@
 title: Activity Logs (Audit Trail)
 owner: alamin-nifty
 status: draft
-version: 2
+version: 3
 updated_at: 2026-06-10
 ---
 
@@ -15,6 +15,24 @@ Denowatts keeps a permanent **audit trail**: every time a record anywhere in the
 ## Why this matters
 
 When a site's configuration suddenly looks wrong, an alarm threshold changed, or a user account disappeared, the trail answers "who changed this, when, and what did it look like before?" It is the platform's accountability and forensics layer — used for support, debugging, and compliance alike.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart TD
+    USER["User action<br/>in the portal"] --> API["Backend handles<br/>the request"]
+    API --> WRITE["Record created /<br/>changed / deleted"]
+    WRITE --> DATA[("Application data")]
+    WRITE -->|"automatic side effect<br/>(no feature code involved)"| AUDIT[("Audit trail:<br/>who, what, before / after")]
+    BULK["Bulk operations<br/>(many records at once)"] -.->|"not captured"| AUDIT
+    AUDIT --> VIEW["SuperAdmin browses and filters<br/>the trail in Settings"]
+```
+
+The data layer itself records every change as it happens — no feature has to remember to log anything.
+
+---
 
 ## What gets recorded
 

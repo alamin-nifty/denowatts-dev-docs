@@ -2,7 +2,7 @@
 title: Webhooks
 owner: alamin-nifty
 status: draft
-version: 2
+version: 3
 updated_at: 2026-06-10
 ---
 
@@ -17,6 +17,23 @@ Webhooks are the platform's **incoming integration doors** — a small set of en
 ## Why this matters
 
 These endpoints are the glue between sales and operations. When a deal closes in the CRM, the site and company appear in the platform automatically — nobody re-types them. And when monitoring detects a problem, this is the doorway through which an alarm becomes an email in an inbox and a notification in the app. If the CRM sync misfires you get duplicate or orphaned records; if alarm dispatch misfires, nobody hears about an outage.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart TD
+    HS["HubSpot CRM"] -->|"site / company<br/>created or updated"| EP["Webhook endpoints<br/>(shared-secret guarded)"]
+    EP -->|"create / update,<br/>idempotent by name"| REC[("Companies and sites")]
+    EP -.->|"platform id<br/>written back"| HS
+    PIPE["Alarm pipeline"] -->|"alarm opened<br/>or closed"| EP
+    EP --> SET["Company notification settings<br/>(matched by severity)"]
+    SET -->|"fan-out to matching<br/>active users"| MAIL["Emails<br/>(+ optional support copy)"]
+    SET --> BELL["In-app bell<br/>notifications"]
+```
+
+Two unrelated callers share one guarded door: the CRM pushes company/site records in (and gets the platform id back), and the alarm pipeline triggers the notification fan-out.
 
 ---
 

@@ -48,6 +48,24 @@ For each you control:
 
 ---
 
+## How the data flows
+
+```mermaid
+flowchart LR
+    U["Analyst in the portal"] --> P["Analytics page"]
+    B["Backend API"] -->|"site, channel and metric<br/>metadata only"| P
+    P -->|"selections + secure token"| DASH["Plotly chart service"]
+    P -->|"zone lookup"| MATRIX["Zone matrix service"]
+    P -.->|"legacy path<br/>(off by default)"| CHART["Highcharts data service"]
+    ROLL[("Rollup time-series")] --> DASH
+    ROLL --> CHART
+    DASH -->|"interactive chart"| P
+```
+
+The backend supplies only the *metadata*; the chart itself is produced by the external services reading the stored time-series directly.
+
+---
+
 ## How charting works
 
 The flow is simple from the outside:

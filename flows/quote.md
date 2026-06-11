@@ -2,7 +2,7 @@
 title: Quote / Proposal
 owner: alamin-nifty
 status: draft
-version: 2
+version: 3
 updated_at: 2026-06-10
 ---
 
@@ -17,6 +17,24 @@ A **quote** is a formal price proposal for outfitting a solar installation with 
 ## Why this matters
 
 The quote is where a prospect becomes a monitored site. The numbers on it drive the invoice, the hardware shipment, and the length of the monitoring subscription — so a mispriced or mis-specified quote follows the site for years. The module automates the error-prone parts: it works out which hardware and service products a site needs from a handful of facts (capacity, mounting, module type, service tier), pulls live prices from the accounting system, and enforces a one-way lifecycle so a signed quote can't quietly be edited backwards.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart TD
+    SALES["Salesperson creates quote<br/>(single, bulk, or renewal)"] --> PRICE["Pricing auto-computed<br/>from live catalogue"]
+    PRICE --> PEND["Pending<br/>(in review)"]
+    PEND --> REQ["Requested<br/>for signing"]
+    REQ -.->|"customer signs"| ESIGN["External e-signature<br/>service"]
+    ESIGN -.-> SIGNED["Signed"]
+    SIGNED --> ORDERED["Ordered<br/>(invoice raised)"]
+    ORDERED --> SHIPPED["Shipped<br/>(subscription activated)"]
+    SIGNED --> NEXT["Feeds handover<br/>and future renewals"]
+```
+
+Statuses only ever move forward; the e-signature step happens in an external signing service, outside the platform.
 
 ---
 

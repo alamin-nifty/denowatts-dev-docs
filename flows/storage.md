@@ -2,7 +2,7 @@
 title: Storage (File Storage)
 owner: alamin-nifty
 status: draft
-version: 2
+version: 3
 updated_at: 2026-06-10
 ---
 
@@ -17,6 +17,22 @@ Every site on the platform has its own private file area — the **Denobox** —
 ## Why this matters
 
 Files are the paper trail of a solar site — the as-built plans, the energy model, the commissioning photos, the signed reports. Keeping them scoped per site, organised into predictable folders, and accessible only through short-lived secure links means the right people can always find the right document, and nobody outside the site's company stumbles into it. Several automated behaviours (event-log entries, support emails, photo cleanup) also hang off file activity, so the file store doubles as part of the site's activity record.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart LR
+    UP["Portal uploads<br/>(photos, documents)"] --> S3[("Per-site private area<br/>in cloud storage")]
+    CAM["Security cameras<br/>(device push)"] -->|"latest image replaces<br/>the previous one"| S3
+    CT["Capacity-test files<br/>and reports"] --> S3
+    S3 --> TAB["Denobox tab<br/>(browse, search, annotate)"]
+    TAB -->|"generated fresh<br/>on every view"| LINK["Short-lived<br/>download links"]
+    LINK --> USER["Person downloads<br/>the file"]
+```
+
+Everything funnels into the site's private storage area and only comes back out through short-lived secure links.
 
 ---
 

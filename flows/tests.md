@@ -2,7 +2,7 @@
 title: Tests
 owner: alamin-nifty
 status: draft
-version: 3
+version: 4
 updated_at: 2026-06-10
 ---
 
@@ -23,6 +23,24 @@ This is the contractual backbone of solar projects: it's the evidence used to se
 Two standard methods are offered:
 - **ASTM E2848-13 (2018)** using the customer's model.
 - **IEC 61724-2 (2016)** using a proxy model.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart TD
+    A["Analyst checks the data window<br/>(power-analysis chart)"] --> B["Submit test conditions<br/>(method, reference conditions, filters)"]
+    B --> API["Backend"]
+    API -- "forwards the run" --> ENG["External analysis engine"]
+    M[("Site measurements<br/>(irradiance, cell temp, AC power)")] --> ENG
+    ENG -- "capacity at reference conditions" --> R["Draft test report"]
+    R --> F[("Site file area")]
+    F --> D["Analyst downloads<br/>the draft"]
+    F -.-> V["Archived reports viewed via the<br/>embedded chart service"]
+```
+
+Running a test goes through the analysis engine and lands a draft report in the site's file area; *viewing* past reports happens through the embedded chart service instead.
 
 ---
 

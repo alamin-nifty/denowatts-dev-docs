@@ -2,7 +2,7 @@
 title: Status Logs
 owner: alamin-nifty
 status: draft
-version: 2
+version: 3
 updated_at: 2026-06-10
 ---
 
@@ -19,6 +19,22 @@ This is the *infrastructure* health layer. It's a different concept from the gre
 ## Why this matters
 
 When data looks wrong or charts go blank, the first question is whether the problem is at the solar site or in the platform itself. Status Logs answers the platform half of that question: it's the source of truth for "is our own machinery healthy?", both for SuperAdmins inside the portal and for customers via the public status page.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart TD
+    MON["External monitoring services<br/>(background workers)"] -->|"health entry per check:<br/>up or down"| LOGS[("Status log collection")]
+    TPL[("Status display template<br/>(human-maintained)")] --> ROLL["Backend overlays the latest<br/>entry per service"]
+    LOGS --> ROLL
+    ROLL --> VERDICT["Overall verdict:<br/>UP / DOWN /<br/>PARTIALLY DEGRADED"]
+    VERDICT --> SA["SuperAdmin query<br/>inside the portal"]
+    VERDICT --> PUB["Public status page<br/>(no login)"]
+```
+
+A templated service with no log at all is assumed healthy — only an explicit "down" entry turns it red.
 
 ---
 

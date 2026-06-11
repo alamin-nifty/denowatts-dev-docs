@@ -6,6 +6,22 @@ import repos from './data/repos.json'
 
 marked.setOptions({ gfm: true, breaks: false })
 
+// ```mermaid fences become <div class="mermaid"> holding the raw (entity-
+// escaped) diagram source; the portal runs mermaid over visible ones after
+// render. Other languages fall through to marked's default code renderer.
+marked.use({
+  renderer: {
+    code(token) {
+      if ((token.lang || '').trim() !== 'mermaid') return false
+      const src = token.text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+      return `<div class="mermaid">${src}</div>`
+    },
+  },
+})
+
 // Turn a citation path like "denowatts-backend/src/auth/auth.service.ts" into a
 // GitHub blob URL, using the repo-prefix → base map. Returns null if unknown.
 function githubUrl(path) {

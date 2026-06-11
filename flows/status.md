@@ -2,7 +2,7 @@
 title: Status
 owner: alamin-nifty
 status: draft
-version: 3
+version: 4
 updated_at: 2026-06-10
 ---
 
@@ -17,6 +17,25 @@ The Status dashboard is the platform's **live health board** — the screen an o
 ## Why this matters
 
 Solar sites fail quietly — a gateway loses cellular signal, a sensor stops reporting, an inverter trips — and nobody notices until production numbers look wrong days later. The Status dashboard makes those failures visible *now*. It's the operations team's first stop each morning and their triage screen when something's off: green means reporting, red means investigate, and every red row links straight to where you'd act on it.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart TD
+    subgraph OUTSIDE["Produced outside the platform backend"]
+        HW["Site hardware reports"] --> ING["External ingestion service"]
+    end
+    ING -->|"writes connection status<br/>and last-seen"| REC[("Site and channel records")]
+    REC -->|"stored status read as-is"| BE["Backend"]
+    EV[("Events")] -->|"open alarms and notes<br/>counted at query time"| BE
+    BE -->|"polled every minute"| V1["Portfolio Status view"]
+    BE -->|"polled every minute"| V2["Site Status view"]
+    BE -->|"polled every minute"| V3["Channel Status view"]
+```
+
+The colored dots come from status fields written by an external ingestion system — the dashboard displays them and layers live alarm/note counts on top.
 
 ---
 

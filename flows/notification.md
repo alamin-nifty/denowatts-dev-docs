@@ -2,7 +2,7 @@
 title: Notification
 owner: alamin-nifty
 status: draft
-version: 2
+version: 3
 updated_at: 2026-06-10
 ---
 
@@ -17,6 +17,22 @@ Notifications are how the platform gets your attention. There are three kinds: t
 ## Why this matters
 
 A monitoring platform is only useful if the right person hears about a problem while it's still happening. The notification system is the last mile: it decides whether an alarm becomes an email in a manager's inbox, a red badge on the bell, or silence. Company administrators tune that delivery per event type, so a Critical alarm can page everyone while routine notes stay quiet.
+
+---
+
+## How the data flows
+
+```mermaid
+flowchart TD
+    ALARM["Alarm dispatch<br/>(per company settings,<br/>by severity)"] --> REC[("Notification records<br/>(one per recipient)")]
+    CMT["Event comments<br/>and @-mentions"] --> REC
+    REC --> BELL["In-app bell feed<br/>+ unread badge"]
+    SA["SuperAdmin broadcast"] --> SYS[("System banner<br/>(single message)")]
+    SYS --> ALL["Pop-up for every user<br/>at next login"]
+    PREF["Site-level preferences"] -.->|"saved but not<br/>consumed yet"| STORE[("Stored settings<br/>(no dispatch reads them)")]
+```
+
+A bell notification is always a per-recipient record fed by alarm dispatch or comment mentions; the system banner is a separate broadcast channel, and site-level preferences are a dead-end branch today.
 
 ---
 
