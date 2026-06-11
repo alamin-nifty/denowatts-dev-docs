@@ -443,13 +443,27 @@ function FlowDoc({ doc, mode }) {
   const visibleToc = tocVisible(doc.toc, mode)
   const [activeId, setActiveId] = useState(visibleToc[0]?.id || null)
 
-  // Render mermaid diagrams. The article is keyed by mode, so a mode switch
-  // remounts fresh unprocessed nodes; only visible ones are run (hidden
-  // {dev}-section diagrams would render with zero dimensions).
+  // Render mermaid diagrams — self-healing. Anything that resets the
+  // article's HTML (mode switch, navigation, HMR) restores the raw fenced
+  // source; this re-renders any diagram whose SVG has gone missing, and a
+  // MutationObserver catches resets that happen outside the deps cycle.
   useEffect(() => {
-    const nodes = [...document.querySelectorAll('.prose .mermaid')]
-      .filter((n) => n.offsetParent !== null && !n.getAttribute('data-processed'))
-    if (nodes.length) mermaid.run({ nodes }).catch(() => { /* leave source text visible */ })
+    let alive = true
+    const renderDiagrams = () => {
+      if (!alive) return
+      const nodes = [...document.querySelectorAll('.prose .mermaid')]
+        .filter((n) => n.offsetParent !== null && !n.querySelector('svg'))
+      if (!nodes.length) return
+      nodes.forEach((n) => n.removeAttribute('data-processed'))
+      mermaid.run({ nodes }).catch(() => { /* faint source stays as fallback */ })
+    }
+    renderDiagrams()
+    const article = document.querySelector('.prose')
+    // Recursion-safe: renderDiagrams only acts on .mermaid nodes that LACK an
+    // svg, so the observer firing on mermaid's own svg insertion is a no-op.
+    const mo = new MutationObserver(() => renderDiagrams())
+    if (article) mo.observe(article, { childList: true, subtree: true })
+    return () => { alive = false; mo.disconnect() }
   }, [doc, mode])
   useEffect(() => {
     const ids = tocVisible(doc.toc, mode).map((t) => t.id)

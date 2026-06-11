@@ -721,4 +721,7 @@ body {
 /* Mermaid data-flow diagrams */
 .prose .mermaid { display: flex; justify-content: center; margin: 20px 0 26px; overflow-x: auto; }
 .prose .mermaid svg { max-width: 100%; height: auto; }
-.prose .mermaid:not([data-processed]) { color: transparent; min-height: 40px; }
+.prose .mermaid:not([data-processed]) {
+  color: var(--ink-faint); opacity: .3; font-size: 11px;
+  font-family: ui-monospace, monospace; white-space: pre-wrap; min-height: 40px;
+}
