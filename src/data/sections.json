@@ -4,6 +4,7 @@
     "title": "Authentication",
     "icon": "lock",
     "flow": "flows/authentication.md",
+    "group": "Features",
     "summary": "Sign-in, sign-up, email verification, password reset and OTP. The gate in front of the whole portal."
   },
   {
@@ -11,6 +12,7 @@
     "title": "Portfolio",
     "icon": "grid",
     "flow": "flows/portfolio.md",
+    "group": "Features",
     "summary": "Cross-site rollups: energy KPIs, triage and irradiation across every site a company owns."
   },
   {
@@ -18,6 +20,7 @@
     "title": "Site",
     "icon": "panel",
     "flow": "flows/site.md",
+    "group": "Features",
     "summary": "Per-site workspace: live view, channels, energy model, hardware services and field setup."
   },
   {
@@ -25,6 +28,7 @@
     "title": "Status",
     "icon": "pulse",
     "flow": "flows/status.md",
+    "group": "Features",
     "summary": "Health and connectivity views at site, portfolio and channel level."
   },
   {
@@ -32,6 +36,7 @@
     "title": "Analytics",
     "icon": "chart",
     "flow": "flows/analytics.md",
+    "group": "Features",
     "summary": "Energy accounting and performance analytics for a single site or the whole portfolio."
   },
   {
@@ -39,6 +44,7 @@
     "title": "Tests",
     "icon": "beaker",
     "flow": "flows/tests.md",
+    "group": "Features",
     "summary": "Capacity tests, benchmark alignment and other commissioning checks."
   },
   {
@@ -46,6 +52,7 @@
     "title": "Field Setup",
     "icon": "wrench",
     "flow": "flows/field-setup.md",
+    "group": "Features",
     "summary": "Gateway provisioning, networking info and installation verification in the field."
   },
   {
@@ -53,6 +60,167 @@
     "title": "Settings",
     "icon": "gear",
     "flow": "flows/settings.md",
+    "group": "Features",
     "summary": "Company, user, and hardware administration — including cell-modem plan management."
+  },
+  {
+    "key": "Channels",
+    "title": "Channels",
+    "icon": "panel",
+    "flow": "flows/channels.md",
+    "group": "Modules",
+    "summary": "The data streams from site hardware — Deno sensors, gateways, Modbus/OPC devices, modems — and the Modbus template library."
+  },
+  {
+    "key": "Events",
+    "title": "Events",
+    "icon": "pulse",
+    "flow": "flows/events.md",
+    "group": "Modules",
+    "summary": "The site timeline: alarms, maintenance records, notes, tickets and flags, with comments and acknowledgment."
+  },
+  {
+    "key": "AlarmConfig",
+    "title": "Alarm Config",
+    "icon": "pulse",
+    "flow": "flows/alarm-config.md",
+    "group": "Modules",
+    "summary": "The catalog of alarm types, severities and thresholds that incoming alarm events are classified by."
+  },
+  {
+    "key": "Notifications",
+    "title": "Notifications",
+    "icon": "pulse",
+    "flow": "flows/notification.md",
+    "group": "Modules",
+    "summary": "In-app notification bell and system-wide broadcast banners; company settings drive alarm delivery."
+  },
+  {
+    "key": "Webhooks",
+    "title": "Webhooks",
+    "icon": "wrench",
+    "flow": "flows/webhooks.md",
+    "group": "Modules",
+    "summary": "Inbound integrations: HubSpot CRM sync and the alarm-dispatch pipeline that fans out emails and notifications."
+  },
+  {
+    "key": "Reports",
+    "title": "Reports",
+    "icon": "chart",
+    "flow": "flows/report.md",
+    "group": "Modules",
+    "summary": "Scheduled fleet and site reports — templates, KPI columns, Excel rendering and email delivery."
+  },
+  {
+    "key": "DataOut",
+    "title": "Data Out (API)",
+    "icon": "chart",
+    "flow": "flows/data-out.md",
+    "group": "Modules",
+    "summary": "The raw and rollup time-series collections, the public customer data API (API key + IP whitelist), and live data feeds."
+  },
+  {
+    "key": "Metrics",
+    "title": "Metrics",
+    "icon": "chart",
+    "flow": "flows/metrics.md",
+    "group": "Modules",
+    "summary": "The catalog of measured quantities — names, units, KPI flags — with per-company display-name translation."
+  },
+  {
+    "key": "DeviceTypes",
+    "title": "Device Types",
+    "icon": "grid",
+    "flow": "flows/device-types.md",
+    "group": "Modules",
+    "summary": "The read-only taxonomy of supported hardware, keyed by channel-id prefix."
+  },
+  {
+    "key": "Assets",
+    "title": "Assets",
+    "icon": "wrench",
+    "flow": "flows/assets.md",
+    "group": "Modules",
+    "summary": "The physical hardware inventory — sensors, gateways, modems, radios — with serials, calibration records and SIM details."
+  },
+  {
+    "key": "SiteBuilder",
+    "title": "Site Builder",
+    "icon": "panel",
+    "flow": "flows/site-builder.md",
+    "group": "Modules",
+    "summary": "The drag-and-drop canvas for laying out a site's topology, deployed onto channels as their site-map positions."
+  },
+  {
+    "key": "Storage",
+    "title": "Storage (Denobox)",
+    "icon": "grid",
+    "flow": "flows/storage.md",
+    "group": "Modules",
+    "summary": "Each site's private file area — photos, reports, capacity-test files — with short-lived download links."
+  },
+  {
+    "key": "Quote",
+    "title": "Quotes",
+    "icon": "chart",
+    "flow": "flows/quote.md",
+    "group": "Modules",
+    "summary": "Sales quotation management — single, bulk and group quotes, auto-pricing, renewals and e-signature."
+  },
+  {
+    "key": "Companies",
+    "title": "Companies",
+    "icon": "grid",
+    "flow": "flows/companies.md",
+    "group": "Modules",
+    "summary": "The tenant boundary: each company owns sites and users, with billing, API keys, verified domains and notification settings."
+  },
+  {
+    "key": "Users",
+    "title": "Users",
+    "icon": "lock",
+    "flow": "flows/users.md",
+    "group": "Modules",
+    "summary": "User accounts, the role levels, account states and company scoping."
+  },
+  {
+    "key": "ActivityLogs",
+    "title": "Activity Logs",
+    "icon": "gear",
+    "flow": "flows/activity-logs.md",
+    "group": "Modules",
+    "summary": "The automatic, append-only audit trail of every create, update and delete across the platform."
+  },
+  {
+    "key": "StatusLogs",
+    "title": "Status Logs",
+    "icon": "pulse",
+    "flow": "flows/status-logs.md",
+    "group": "Modules",
+    "summary": "The platform-infrastructure health log behind System Status and the public status page."
+  },
+  {
+    "key": "Agenda",
+    "title": "Agenda (Jobs)",
+    "icon": "gear",
+    "flow": "flows/agenda.md",
+    "group": "Modules",
+    "summary": "The background job scheduler — today, scheduled report generation and delivery."
+  },
+  {
+    "key": "Prompts",
+    "title": "Prompts (AI)",
+    "icon": "beaker",
+    "flow": "flows/prompts.md",
+    "group": "Modules",
+    "summary": "A feedback store for AI chat exchanges — an in-progress feature not yet surfaced in the portal."
+  },
+  {
+    "key": "Glossary",
+    "title": "Solar Glossary",
+    "icon": "beaker",
+    "flow": "flows/solar-glossary.md",
+    "group": "Reference",
+    "summary": "The domain vocabulary — irradiance, POA, EPI, capacity tests, channels and more, defined in one place."
   }
 ]

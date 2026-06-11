@@ -16,10 +16,13 @@ const FLOWS = Object.fromEntries(
 )
 
 // Attach each section's documented sub-pages (from pages.generated.json) and a
-// pre-rendered flow doc when one exists.
+// pre-rendered flow doc when one exists. Module names are matched to section
+// keys ignoring spaces/case ("Field Setup" -> "FieldSetup", "Device Types" ->
+// "DeviceTypes"), so human-entered module labels still attach.
+const normKey = (x) => String(x || '').replace(/\s+/g, '').toLowerCase()
 const SECTIONS = sections.map((s) => {
   const subPages = pages
-    .filter((p) => p.module === s.key)
+    .filter((p) => normKey(p.module) === normKey(s.key))
     .map((p) => ({ ...p, aliases: aliasMap[p.route] || [] }))
   const flowFile = s.flow ? s.flow.split('/').pop() : null
   const rawMd = flowFile ? FLOWS[flowFile] : null
@@ -152,28 +155,32 @@ export default function DocsPortal() {
           <button className={'nav-home' + (active === null ? ' active' : '')} onClick={() => go(null)}>
             Overview
           </button>
-          <div className="nav-label">Sections</div>
-          {SECTIONS.map((s) => (
-            <div key={s.key} className="nav-group">
-              <button className={'nav-item' + (active === s.key ? ' active' : '') + (s.documented ? '' : ' muted')}
-                onClick={() => go(s.key)}>
-                <Icon name={s.icon} className="nav-icon" />
-                <span>{s.title}</span>
-                {s.documented
-                  ? <span className="pill-count">{s.pages.length}</span>
-                  : <span className="pill-soon">soon</span>}
-              </button>
-              {active === s.key && s.pages.length > 0 && (
-                <div className="nav-children">
-                  {s.pages.map((p) => (
-                    <button key={p.route}
-                      className={'nav-child' + (activePage === p.route ? ' active' : '')}
-                      onClick={() => selectPage(s.key, p.route)}>
-                      {p.name}
-                    </button>
-                  ))}
+          {[...new Set(SECTIONS.map((s) => s.group || 'Sections'))].map((group) => (
+            <div key={group}>
+              <div className="nav-label">{group}</div>
+              {SECTIONS.filter((s) => (s.group || 'Sections') === group).map((s) => (
+                <div key={s.key} className="nav-group">
+                  <button className={'nav-item' + (active === s.key ? ' active' : '') + (s.documented ? '' : ' muted')}
+                    onClick={() => go(s.key)}>
+                    <Icon name={s.icon} className="nav-icon" />
+                    <span>{s.title}</span>
+                    {s.documented
+                      ? <span className="pill-count">{s.pages.length}</span>
+                      : <span className="pill-soon">soon</span>}
+                  </button>
+                  {active === s.key && s.pages.length > 0 && (
+                    <div className="nav-children">
+                      {s.pages.map((p) => (
+                        <button key={p.route}
+                          className={'nav-child' + (activePage === p.route ? ' active' : '')}
+                          onClick={() => selectPage(s.key, p.route)}>
+                          {p.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
+              ))}
             </div>
           ))}
         </nav>
@@ -235,7 +242,7 @@ function Overview({ sections, documentedCount, onPick }) {
   return (
     <div className="page fade">
       <header className="hero">
-        <div className="eyebrow">DenoWatts · Developer Documentation</div>
+        <div className="eyebrow">DenoWatts · Documentation</div>
         <h1>The ground truth, <span className="accent">documented</span>.</h1>
         <p className="lede">
           Business logic traced across the portal and backend — one canonical doc per feature,
