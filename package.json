@@ -12,6 +12,7 @@
     "extract": "node scripts/extract-routes.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "marked": "^18.0.4",
     "mermaid": "^11.15.0",
     "react": "^19.2.6",
