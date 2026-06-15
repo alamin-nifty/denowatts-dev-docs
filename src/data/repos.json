@@ -1,4 +1,10 @@
 {
-  "denowatts-portal": "https://github.com/nifty-apps/denowatts-portal/blob/main",
-  "denowatts-backend": "https://github.com/nifty-apps/denowatts-backend/blob/main"
+  "denowatts-portal": {
+    "github": "https://github.com/nifty-apps/denowatts-portal/blob/main",
+    "local": "/Users/macmini-m1-02/Documents/Projects/denowatts/denowatts-portal"
+  },
+  "denowatts-backend": {
+    "github": "https://github.com/nifty-apps/denowatts-backend/blob/main",
+    "local": "/Users/macmini-m1-02/Documents/Projects/denowatts/denowatts-backend"
+  }
 }

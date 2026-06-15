@@ -111,9 +111,11 @@ server.registerTool('affected_docs', {
 })
 
 server.registerTool('check_drift', {
-  description: 'Compare the GitHub source repos against the last-reviewed baseline and report which docs are affected by new commits. Requires gh CLI auth.',
-  inputSchema: { sinceDays: z.number().optional().describe('ad-hoc window instead of the stored baseline') },
-}, async ({ sinceDays }) => {
+  description: 'Compare the GitHub source repos (main branch) against the last-reviewed baseline and report which docs are affected by new commits. Requires gh CLI auth.',
+  inputSchema: {
+    sinceDays: z.number().optional().describe('ad-hoc window instead of the stored baseline'),
+  },
+}, async ({ sinceDays } = {}) => {
   const args = [join(ROOT, 'scripts', 'drift-check.mjs'), '--json']
   if (sinceDays) args.push('--since-days', String(sinceDays))
   try {

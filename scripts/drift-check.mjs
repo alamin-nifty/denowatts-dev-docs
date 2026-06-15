@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-// Drift detector: compares the GitHub source repos against the last-reviewed
+// Drift detector: compares the source repos against the last-reviewed
 // SHAs and maps changed files onto the docs that cite them.
 //
 // The docs are the dependency map: every claim cites `repo/path.ts:line`, so
 // "which docs does this commit affect" is a mechanical intersection.
 //
 // Usage:
-//   node scripts/drift-check.mjs                 # report drift since last reviewed SHAs
+//   node scripts/drift-check.mjs                 # local git mode (default when local repos exist)
+//   node scripts/drift-check.mjs --github        # force GitHub API mode
 //   node scripts/drift-check.mjs --json          # machine-readable output
 //   node scripts/drift-check.mjs --seed          # set baseline = current HEADs (no report)
 //   node scripts/drift-check.mjs --since-days 7  # ad-hoc: compare against HEAD~(7 days)
@@ -26,14 +27,51 @@ const REPORTS = join(ROOT, 'reports')
 
 const REPOS = (() => {
   const map = JSON.parse(readFileSync(join(ROOT, 'src', 'data', 'repos.json'), 'utf8'))
-  // "https://github.com/org/repo/blob/branch" -> { prefix, slug: org/repo, branch }
-  return Object.entries(map).map(([prefix, url]) => {
+  return Object.entries(map).map(([prefix, val]) => {
+    // Support both old string format and new { github, local } object format
+    const url = typeof val === 'string' ? val : val.github
     const m = url.match(/github\.com\/([^/]+\/[^/]+)\/blob\/([^/]+)/)
-    return { prefix, slug: m[1], branch: m[2] }
+    return { prefix, slug: m[1], branch: m[2], local: typeof val === 'object' ? val.local : null }
   })
 })()
 
 const gh = (path) => JSON.parse(execFileSync('gh', ['api', path], { maxBuffer: 64 * 1024 * 1024 }).toString())
+
+// ---------- local git helpers ----------
+const git = (localPath, args) =>
+  execFileSync('git', ['-C', localPath, ...args], { maxBuffer: 64 * 1024 * 1024 }).toString().trim()
+
+function localCompare(repo, base) {
+  const head = git(repo.local, ['rev-parse', 'HEAD'])
+  if (base.replace(/~1$/, '') === head) return { head, commits: [], files: [] }
+
+  const SEP = '\x1f' // ASCII unit separator — safe in git format strings
+  const logOut = git(repo.local, ['log', `${base}..HEAD`, `--format=%H${SEP}%s${SEP}%an`])
+  const commits = logOut.split('\n').filter(Boolean).map((l) => {
+    const [sha, message, author] = l.split(SEP)
+    return { sha: (sha || '').slice(0, 10), message: message || '', author: author || '' }
+  })
+
+  const nameStatus = git(repo.local, ['diff', `${base}..HEAD`, '--name-status'])
+  const files = []
+  for (const line of nameStatus.split('\n').filter(Boolean)) {
+    const parts = line.split('\t')
+    const code = parts[0]
+    let filename, status
+    if (code.startsWith('R') || code.startsWith('C')) {
+      filename = parts[2]; status = 'renamed'
+    } else {
+      filename = parts[1]
+      status = code === 'A' ? 'added' : code === 'D' ? 'removed' : 'modified'
+    }
+    let patch = ''
+    if (status !== 'removed') {
+      try { patch = git(repo.local, ['diff', `${base}..HEAD`, '--', filename]) } catch {}
+    }
+    files.push({ filename, status, patch })
+  }
+  return { head, commits, files }
+}
 
 // ---------- citation index: source file -> [{ doc, section, ranges }] ----------
 const CITE_RE = /(denowatts-(?:portal|backend))\/([\w@$./[\]-]+?\.(?:ts|tsx|js|mjs|jsx|json))(?::(\d+)(?:[-–](\d+))?)?/g
@@ -80,97 +118,131 @@ const RUN_DIRECT = process.argv[1] && import.meta.url === pathToFileURL(process.
 if (RUN_DIRECT) await main()
 
 async function main() {
-const args = process.argv.slice(2)
-const flag = (f) => args.includes(f)
-const optVal = (f) => { const i = args.indexOf(f); return i === -1 ? null : args[i + 1] }
+  const args = process.argv.slice(2)
+  const flag = (f) => args.includes(f)
+  const optVal = (f) => { const i = args.indexOf(f); return i === -1 ? null : args[i + 1] }
 
-const state = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, 'utf8')) : {}
-const heads = {}
-for (const r of REPOS) heads[r.slug] = gh(`repos/${r.slug}/commits/${r.branch}`).sha
+  // Mode: GitHub API (default — tracks what's actually merged to main) vs local git (--local flag).
+  const useLocal = flag('--local')
 
-if (flag('--seed') || flag('--mark-reviewed')) {
-  for (const r of REPOS) state[r.slug] = { sha: heads[r.slug], at: new Date().toISOString() }
-  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + '\n')
-  console.log('Baselines set to current HEADs:')
-  for (const r of REPOS) console.log(' ', r.slug, heads[r.slug].slice(0, 10))
-  process.exit(0)
-}
+  const state = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, 'utf8')) : {}
 
-const sinceDays = optVal('--since-days')
-const index = buildCitationIndex()
-const out = { generatedAt: new Date().toISOString(), repos: [] }
-
-for (const r of REPOS) {
-  let base = state[r.slug]?.sha
-  if (sinceDays) {
-    const since = new Date(Date.now() - +sinceDays * 864e5).toISOString()
-    const commits = gh(`repos/${r.slug}/commits?sha=${r.branch}&since=${since}&per_page=100`)
-    base = commits.length ? `${commits[commits.length - 1].sha}~1` : heads[r.slug]
-  }
-  if (!base) { out.repos.push({ slug: r.slug, error: 'no baseline — run with --seed first' }); continue }
-
-  const head = heads[r.slug]
-  if (base.replace(/~1$/, '') === head) { out.repos.push({ slug: r.slug, base, head, commits: [], affected: [], uncited: [] }); continue }
-
-  const cmp = gh(`repos/${r.slug}/compare/${base}...${head}`)
-  const commits = cmp.commits.map((c) => ({ sha: c.sha.slice(0, 10), message: c.commit.message.split('\n')[0], author: c.commit.author?.name }))
-  const affected = []
-  const uncited = []
-  for (const f of cmp.files || []) {
-    const key = `${r.prefix}/${f.filename}`
-    const hits = index.get(key)
-    if (!hits) {
-      if (f.status === 'added' && /^src\//.test(f.filename) && !/\.spec\./.test(f.filename)) uncited.push({ file: f.filename, status: f.status })
-      continue
-    }
-    const fileRanges = changedRanges(f.patch)
-    for (const [doc, e] of hits) {
-      const citedHit = e.ranges.length && fileRanges.length ? overlaps(fileRanges, e.ranges) : null
-      affected.push({
-        file: f.filename, status: f.status, doc,
-        sections: [...e.sections],
-        severity: f.status === 'removed' ? 'CITED FILE DELETED' : citedHit ? 'CITED LINES TOUCHED' : 'FILE CHANGED',
-      })
+  // Resolve current HEADs for all repos
+  const heads = {}
+  for (const r of REPOS) {
+    if (useLocal) {
+      try { heads[r.slug] = git(r.local, ['rev-parse', 'HEAD']) } catch { heads[r.slug] = null }
+    } else {
+      try { heads[r.slug] = gh(`repos/${r.slug}/commits/${r.branch}`).sha } catch { heads[r.slug] = null }
     }
   }
-  out.repos.push({ slug: r.slug, base: base.slice(0, 10), head: head.slice(0, 10), commits, affected, uncited, truncated: (cmp.files || []).length >= 300 })
-}
 
-if (flag('--json')) { console.log(JSON.stringify(out, null, 2)); process.exit(0) }
-
-// ---------- markdown report ----------
-let md = `# Doc drift report — ${out.generatedAt.slice(0, 10)}\n\n`
-let any = false
-for (const r of out.repos) {
-  md += `## ${r.slug}\n\n`
-  if (r.error) { md += `> ${r.error}\n\n`; continue }
-  if (!r.commits.length) { md += `No changes since last review (\`${String(r.base).slice(0, 10)}\`).\n\n`; continue }
-  any = true
-  md += `\`${r.base}\` → \`${r.head}\` — **${r.commits.length} commit(s)**\n\n`
-  for (const c of r.commits.slice(0, 30)) md += `- \`${c.sha}\` ${c.message}\n`
-  if (r.commits.length > 30) md += `- …and ${r.commits.length - 30} more\n`
-  md += '\n'
-  if (r.affected.length) {
-    md += `### Affected docs\n\n| Doc | Section(s) | Source file | Severity |\n|---|---|---|---|\n`
-    const byDoc = {}
-    for (const a of r.affected) (byDoc[a.doc] ||= []).push(a)
-    for (const [doc, items] of Object.entries(byDoc).sort())
-      for (const a of items) md += `| ${doc} | ${a.sections.join(' · ')} | \`${a.file}\` | ${a.severity} |\n`
-    md += '\n'
-  } else md += `_No cited files touched._\n\n`
-  if (r.uncited.length) {
-    md += `### New source files not covered by any doc\n\n`
-    for (const u of r.uncited) md += `- \`${u.file}\`\n`
-    md += '\n'
+  if (flag('--seed') || flag('--mark-reviewed')) {
+    for (const r of REPOS) {
+      if (heads[r.slug]) state[r.slug] = { sha: heads[r.slug], at: new Date().toISOString() }
+    }
+    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + '\n')
+    console.log(`Baselines set to current HEADs (${useLocal ? 'local-git' : 'github-api'} mode):`)
+    for (const r of REPOS) console.log(' ', r.slug, (heads[r.slug] || 'error').slice(0, 10))
+    process.exit(0)
   }
-  if (r.truncated) md += `> ⚠️ GitHub compare returned 300+ files; list may be truncated.\n\n`
-}
-md += `---\n*Generated by \`scripts/drift-check.mjs\`. After updating the docs, run with \`--mark-reviewed\` to advance the baseline.*\n`
 
-mkdirSync(REPORTS, { recursive: true })
-const reportPath = join(REPORTS, `drift-${out.generatedAt.slice(0, 10)}.md`)
-writeFileSync(reportPath, md)
-console.log(md)
-console.error(`\nReport written to ${reportPath}`)
-process.exit(any ? 2 : 0) // exit 2 = drift found (useful for cron/CI)
+  const sinceDays = optVal('--since-days')
+  const index = buildCitationIndex()
+  const out = { generatedAt: new Date().toISOString(), mode: useLocal ? 'local-git' : 'github-api', repos: [] }
+
+  for (const r of REPOS) {
+    let base = state[r.slug]?.sha
+    if (sinceDays) {
+      const sinceDate = new Date(Date.now() - +sinceDays * 864e5)
+      if (useLocal) {
+        try {
+          const shas = git(r.local, ['log', `--since=${sinceDate.toISOString()}`, '--format=%H']).split('\n').filter(Boolean)
+          base = shas.length ? `${shas[shas.length - 1]}~1` : heads[r.slug]
+        } catch { base = heads[r.slug] }
+      } else {
+        const commits = gh(`repos/${r.slug}/commits?sha=${r.branch}&since=${sinceDate.toISOString()}&per_page=100`)
+        base = commits.length ? `${commits[commits.length - 1].sha}~1` : heads[r.slug]
+      }
+    }
+
+    const head = heads[r.slug]
+    if (!head) { out.repos.push({ slug: r.slug, error: useLocal ? 'local repo not found' : 'failed to get HEAD' }); continue }
+    if (!base) { out.repos.push({ slug: r.slug, error: 'no baseline — run with --seed first' }); continue }
+    if (base.replace(/~1$/, '') === head) {
+      out.repos.push({ slug: r.slug, base, head, commits: [], affected: [], uncited: [] }); continue
+    }
+
+    let commits, files, truncated = false
+    if (useLocal) {
+      const cmp = localCompare(r, base)
+      commits = cmp.commits
+      files = cmp.files
+    } else {
+      const cmp = gh(`repos/${r.slug}/compare/${base}...${head}`)
+      commits = cmp.commits.map((c) => ({ sha: c.sha.slice(0, 10), message: c.commit.message.split('\n')[0], author: c.commit.author?.name }))
+      files = cmp.files || []
+      truncated = files.length >= 300
+    }
+
+    const affected = []
+    const uncited = []
+    for (const f of files) {
+      const key = `${r.prefix}/${f.filename}`
+      const hits = index.get(key)
+      if (!hits) {
+        if ((f.status === 'added' || f.status === 'modified') && /^src\//.test(f.filename) && !/\.spec\./.test(f.filename))
+          uncited.push({ file: f.filename, status: f.status })
+        continue
+      }
+      const fileRanges = changedRanges(f.patch)
+      for (const [doc, e] of hits) {
+        const citedHit = e.ranges.length && fileRanges.length ? overlaps(fileRanges, e.ranges) : null
+        affected.push({
+          file: f.filename, status: f.status, doc,
+          sections: [...e.sections],
+          severity: f.status === 'removed' ? 'CITED FILE DELETED' : citedHit ? 'CITED LINES TOUCHED' : 'FILE CHANGED',
+        })
+      }
+    }
+    out.repos.push({ slug: r.slug, base: String(base).slice(0, 10), head: head.slice(0, 10), commits, affected, uncited, truncated })
+  }
+
+  if (flag('--json')) { console.log(JSON.stringify(out, null, 2)); process.exit(0) }
+
+  // ---------- markdown report ----------
+  let md = `# Doc drift report — ${out.generatedAt.slice(0, 10)} (${out.mode})\n\n`
+  let any = false
+  for (const r of out.repos) {
+    md += `## ${r.slug}\n\n`
+    if (r.error) { md += `> ${r.error}\n\n`; continue }
+    if (!r.commits.length) { md += `No changes since last review (\`${String(r.base).slice(0, 10)}\`).\n\n`; continue }
+    any = true
+    md += `\`${r.base}\` → \`${r.head}\` — **${r.commits.length} commit(s)**\n\n`
+    for (const c of r.commits.slice(0, 30)) md += `- \`${c.sha}\` ${c.message}\n`
+    if (r.commits.length > 30) md += `- …and ${r.commits.length - 30} more\n`
+    md += '\n'
+    if (r.affected.length) {
+      md += `### Affected docs\n\n| Doc | Section(s) | Source file | Severity |\n|---|---|---|---|\n`
+      const byDoc = {}
+      for (const a of r.affected) (byDoc[a.doc] ||= []).push(a)
+      for (const [doc, items] of Object.entries(byDoc).sort())
+        for (const a of items) md += `| ${doc} | ${a.sections.join(' · ')} | \`${a.file}\` | ${a.severity} |\n`
+      md += '\n'
+    } else md += `_No cited files touched._\n\n`
+    if (r.uncited.length) {
+      md += `### New/modified source files not covered by any doc\n\n`
+      for (const u of r.uncited) md += `- \`${u.file}\` (${u.status})\n`
+      md += '\n'
+    }
+    if (r.truncated) md += `> ⚠️ File list may be truncated (300+ files).\n\n`
+  }
+  md += `---\n*Generated by \`scripts/drift-check.mjs\`. After updating the docs, run with \`--mark-reviewed\` to advance the baseline.*\n`
+
+  mkdirSync(REPORTS, { recursive: true })
+  const reportPath = join(REPORTS, `drift-${out.generatedAt.slice(0, 10)}.md`)
+  writeFileSync(reportPath, md)
+  console.log(md)
+  console.error(`\nReport written to ${reportPath}`)
+  process.exit(any ? 2 : 0) // exit 2 = drift found (useful for cron/CI)
 }
