@@ -48,6 +48,14 @@
     "summary": "Capacity tests, benchmark alignment and other commissioning checks."
   },
   {
+    "key": "EnergyModel",
+    "title": "Energy Model",
+    "icon": "chart",
+    "flow": "flows/energy-model.md",
+    "group": "Features",
+    "summary": "The per-site 'expected energy' yardstick behind EPI/BEPI — Owner's (design) vs Operator's (learned) models, PVsyst simulation and post-processing, split across a config backend and the external Matrix physics service."
+  },
+  {
     "key": "FieldSetup",
     "title": "Field Setup",
     "icon": "wrench",
@@ -62,6 +70,14 @@
     "flow": "flows/settings.md",
     "group": "Features",
     "summary": "Company, user, and hardware administration — including cell-modem plan management."
+  },
+  {
+    "key": "DenoAI",
+    "title": "DenoAI",
+    "icon": "beaker",
+    "flow": "flows/deno-ai.md",
+    "group": "Features",
+    "summary": "In-portal AI assistant: answers from live fleet data, runs the DQMS data-ingest and benchmark audits, navigates the portal, and proposes event changes for the user to confirm. SuperAdmin only."
   },
   {
     "key": "Channels",
@@ -184,12 +200,20 @@
     "summary": "User accounts, the role levels, account states and company scoping."
   },
   {
-    "key": "ActivityLogs",
-    "title": "Activity Logs",
-    "icon": "gear",
-    "flow": "flows/activity-logs.md",
+    "key": "AuditTrail",
+    "title": "Audit Trail",
+    "icon": "lock",
+    "flow": "flows/audit-trail.md",
     "group": "Modules",
-    "summary": "The automatic, append-only audit trail of every create, update and delete across the platform."
+    "summary": "Business-readable record of who changed what, before and after — ~53 catalogued actions, readable by company admins as well as Denowatts staff."
+  },
+  {
+    "key": "SystemLogs",
+    "title": "System Logs",
+    "icon": "gear",
+    "flow": "flows/system-logs.md",
+    "group": "Modules",
+    "summary": "The exhaustive developer log (formerly Activity Logs): every database write, sign-in, email, job, integration, device-data call and server error. SuperAdmin only."
   },
   {
     "key": "StatusLogs",

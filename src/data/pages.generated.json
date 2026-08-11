@@ -37,7 +37,7 @@
     "name": "Email Verification",
     "route": "/signup/verify",
     "module": "Auth",
-    "purpose": "Consumes the CONFIRM_EMAIL JWT from the email link, activates the account (PENDING \u2192 ACTIVE), and auto-assigns the user to a matching company if the email domain matches.",
+    "purpose": "Consumes the CONFIRM_EMAIL JWT from the email link, activates the account (PENDING → ACTIVE), and auto-assigns the user to a matching company if the email domain matches.",
     "actions": [
       "Auto-verify on page load via URL token"
     ],
@@ -180,14 +180,20 @@
   {
     "name": "Energy Model",
     "route": "/site/:siteId/energy-model",
-    "module": "Site",
-    "purpose": "Predicted and learned energy model data, monthly power forecasts, and capacity test analysis.",
+    "module": "EnergyModel",
+    "purpose": "The per-site energy model: the 'expected energy' yardstick behind EPI/BEPI. A Model tab (per-block capacity + loss coefficients for the Owner's/Expected and Operator's/Learned models) and a Simulation tab (12-month predicted tables, PVsyst 8760 ingest, and post-processing). Config is stored in the NestJS backend; the physics simulation runs in the external Matrix (Python) service.",
     "actions": [
-      "View predicted model",
-      "View learned model",
-      "View capacity test"
+      "Pick model type (Owner's/Expected vs Operator's/Learned) and version",
+      "Create, edit, delete a model version (auto-closes the previous current one)",
+      "Edit per-block capacity and loss coefficients (Blocks table)",
+      "Edit learned loss factors (Learned table)",
+      "Upload a PVsyst 8760 CSV to build the predicted curve",
+      "Upload PVsyst shade-scene CSVs",
+      "Edit the 12-month predicted table",
+      "Post-process predicted energy (subtract losses, preview then save)",
+      "Configure capacity-test simulation models"
     ],
-    "flow": "flows/site.md"
+    "flow": "flows/energy-model.md"
   },
   {
     "name": "Virtual Site Builder",
@@ -684,20 +690,18 @@
     "flow": "flows/settings.md"
   },
   {
-    "name": "Activity Logs",
-    "route": "/settings/activity-logs",
-    "module": "Settings",
-    "purpose": "SuperAdmin-only, append-only audit trail of every create/update/delete recorded automatically via a global Mongoose plugin. Shows timestamp, acting user (or 'System'), action type, affected collection and document id, and a JSON diff (payload/before/changes) in a detail drawer.",
+    "name": "System Logs",
+    "route": "/settings/system-logs",
+    "module": "System Logs",
+    "purpose": "SuperAdmin-only developer audit log (formerly Activity Logs). Paginated, filterable feed of every database write, sign-in, email, background job, integration call, device-data API request and uncaught server error, with masked payloads, before/after diffs and status codes. Backed by the systemLogs / systemLogFilterOptions / systemLogStats queries.",
     "actions": [
-      "View paginated activity logs",
-      "Search by document id or user (id, name, email) or site/channel/asset/company metadata",
-      "Filter by collection (target)",
-      "Filter by action type (CREATE/UPDATE/DELETE)",
-      "Filter by date range",
-      "Sort by timestamp",
-      "Inspect payload/before/changes in detail drawer"
+      "Browse the system log, latest first",
+      "Filter by collection, action, status, user type, status code and date range",
+      "Search across log entries",
+      "View success/failure counts for all-time, 30 days, 7 days and today",
+      "Inspect an entry's masked payload and before/after diff"
     ],
-    "flow": "flows/activity-logs.md"
+    "flow": "flows/system-logs.md"
   },
   {
     "name": "API Management",
@@ -866,7 +870,7 @@
     "flow": "flows/tests.md"
   },
   {
-    "name": "Tests \u2014 View Archive",
+    "name": "Tests — View Archive",
     "route": "/tests?viewMode=viewArchive",
     "module": "Tests",
     "purpose": "View pre-generated archived reports: Capacity Test, Energy Test, or Production and Loss. Each report is a static snapshot that can be zoomed and panned.",
@@ -878,7 +882,7 @@
     "flow": "flows/tests.md"
   },
   {
-    "name": "Tests \u2014 Create New",
+    "name": "Tests — Create New",
     "route": "/tests?viewMode=create",
     "module": "Tests",
     "purpose": "Generate live test charts on demand. Select site, chart type (Capacity, Energy, or Production/Loss), and date range. Date navigation buttons skip to previous/next period of the same duration.",
@@ -894,7 +898,7 @@
     "name": "Events Feed",
     "route": "/events-feed",
     "module": "Events",
-    "purpose": "Paginated, filterable activity log of all events across accessible sites \u2014 including operator notes, alarms, maintenance records, tickets, data curation actions, and lessons learned. Supports infinite scroll, multi-filter sidebar, and inline event creation.",
+    "purpose": "Paginated, filterable activity log of all events across accessible sites — including operator notes, alarms, maintenance records, tickets, data curation actions, and lessons learned. Supports infinite scroll, multi-filter sidebar, and inline event creation.",
     "actions": [
       "Browse paginated event feed (infinite scroll)",
       "Filter by site, category, severity, date range, status flags",
@@ -986,5 +990,57 @@
       "Open external status page (status.denowatts.com)"
     ],
     "flow": "flows/status-logs.md"
+  },
+  {
+    "name": "DenoAI",
+    "route": "/deno-ai",
+    "module": "DenoAI",
+    "purpose": "Full-page chat with the in-portal AI assistant (SuperAdmin only, requireSuperAdmin guard). Streams answers over SSE, renders rich result cards from the read-only data tools, offers 'Go to' deep links, and surfaces confirm/cancel cards for proposed event changes. A floating launcher and slide-over panel provide the same chat on every other dashboard page.",
+    "actions": [
+      "Ask a question about fleet health, a site's performance or energy losses",
+      "Run the DQMS data-ingest or benchmark audit on a site",
+      "Search the product documentation",
+      "Follow a suggested navigation link to another page",
+      "Confirm or cancel a proposed event create/update/comment",
+      "Browse, resume or delete past conversations",
+      "Stop a streaming response"
+    ],
+    "flow": "flows/deno-ai.md"
+  },
+  {
+    "name": "Audit Trail",
+    "route": "/settings/audit-trail",
+    "module": "Audit Trail",
+    "purpose": "Company-wide audit trail (Admin and SuperAdmin). Business-readable feed of catalogued actions — who did what, to which resource, with a field-by-field before/after list and the originating screen. SuperAdmins see everything; company admins see their own company plus their sites.",
+    "actions": [
+      "Browse audit events, latest first",
+      "Filter by category, severity (including 'issues'), actor, site and date range",
+      "Search across actor, resource, site, event type and target",
+      "Open an event's detail drawer to see the full change list"
+    ],
+    "flow": "flows/audit-trail.md"
+  },
+  {
+    "name": "Site Audit Trail",
+    "route": "/site/:siteId/audit-trail",
+    "module": "Audit Trail",
+    "purpose": "The audit trail scoped to a single site — everything that happened on this installation. Same feed and filters as the settings page, pre-filtered by site. Guarded by requireNonUser.",
+    "actions": [
+      "Browse this site's audit events",
+      "Filter by category, severity, actor and date range",
+      "Open an event's detail drawer"
+    ],
+    "flow": "flows/audit-trail.md"
+  },
+  {
+    "name": "Profile",
+    "route": "/profile",
+    "module": "Users",
+    "purpose": "The signed-in user's own profile: personal details plus their personal notification preferences. The preference record is created on first view (upsert) and currently holds a single switch for the daily status report email.",
+    "actions": [
+      "View and edit own profile details",
+      "Toggle the daily status report email preference"
+    ],
+    "flow": "flows/notification.md"
   }
 ]

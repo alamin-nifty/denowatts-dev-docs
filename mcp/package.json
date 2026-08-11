@@ -1,0 +1,14 @@
+{
+  "name": "denowatts-docs-brain",
+  "version": "1.0.0",
+  "description": "Denowatts documentation MCP server — search, drift detection, code-review findings",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.0.0"
+  }
+}

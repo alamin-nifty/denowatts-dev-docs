@@ -2,8 +2,8 @@
 title: Notification
 owner: alamin-nifty
 status: draft
-version: 3
-updated_at: 2026-06-10
+version: 4
+updated_at: 2026-08-11
 ---
 
 # Notification
@@ -58,7 +58,18 @@ A bell notification is always a per-recipient record fed by alarm dispatch or co
 
 - **Company-level settings drive delivery.** Each company maintains a grid of rules — one per alarm severity and event category — choosing site managers and/or specific named users, and whether each rule sends email, in-app, or both, with a master on/off per rule. See [[settings]] and [[companies]].
 - **Site-level preferences are saved but not yet active.** A site can record per-alarm-rule delivery preferences (channels, delays, extra emails), and the screen for it requires the Enterprise plan or an administrator — but the alarm and event dispatch paths do not read these preferences today. They appear to be groundwork for a future or partially built feature (flagged for review).
+- **Each person has one personal preference of their own** — a switch on their Profile page for the daily status report email. It is stored per user and defaults to on. See *Per-user notification preferences* below.
 - **Only platform administrators (Super Admins)** can create or edit the system banner.
+
+---
+
+## Per-user notification preferences
+
+Separate from the company-wide grid, every user has their **own** preference record, edited on their Profile page. Today it holds a single switch: whether they receive the **daily status report email**. It defaults to on, and the record is created automatically the first time the page is opened — nobody has to be provisioned.
+
+This is the only notification setting an ordinary user controls for themselves; everything else is decided by their company's rules.
+
+> **Not yet wired up.** The preference is stored and editable, but **no backend code reads `dailyStatusReport` when sending the daily status report** — the flag has no effect on delivery today. It is groundwork, like the site-level preferences above. Flagged for human review — `denowatts-backend/src/user-notification/`, and the report path at `denowatts-backend/src/report/services/report-daily-status.service.ts`, which does not consult it.
 
 ---
 
@@ -74,11 +85,57 @@ A bell notification is always a per-recipient record fed by alarm dispatch or co
 ---
 
 ## Entry points {dev}
-- In-app bell icon — `denowatts-portal/src/common/components/Header.tsx` (lines 233–292)
-- Site Notifications tab — `denowatts-portal/src/pages/dashboard/site/notifications/NotificationsPage.tsx` (route `/site/:siteId/notifications`)
-- Notification Management (company-wide) — `denowatts-portal/src/pages/dashboard/settings/notification-management/NotificationManagementPage.tsx` (route `/settings/notification-management`)
-- System Notification admin — `denowatts-portal/src/pages/dashboard/settings/system-notification/SystemNotificationPage.tsx` (route `/settings/system-notification`)
-- System Notification modal on login — `denowatts-portal/src/App.tsx` and `denowatts-portal/src/pages/dashboard/settings/system-notification/SystemNotificationModal.tsx`
+
+> Paths updated after the portal's move from `src/pages/dashboard/*` to the feature-based `src/features/*` tree and from react-router to TanStack Router (routes now live in `denowatts-portal/src/routes/`).
+
+- In-app bell icon — `denowatts-portal/src/common/components/Header.tsx`
+- Site Notifications tab — `denowatts-portal/src/features/site/notifications/NotificationsPage.tsx` (route `/site/:siteId/notifications`)
+- Notification Management (company-wide) — `denowatts-portal/src/features/settings/notification-management/NotificationManagementPage.tsx` (route `/settings/notification-management`)
+- System Notification admin — `denowatts-portal/src/features/settings/system-notification/SystemNotificationPage.tsx` (route `/settings/system-notification`)
+- System Notification modal on login — `denowatts-portal/src/features/settings/system-notification/SystemNotificationModal.tsx`
+- **Per-user preferences** — `denowatts-portal/src/features/profile/components/NotificationPreferences.tsx`, on the Profile page (route `/profile`, `denowatts-portal/src/routes/_dashboard/profile.tsx`)
+
+---
+
+## Per-user preferences module {dev}
+
+Backend module `denowatts-backend/src/user-notification/` — a small, self-contained module (not `@Global()`), registered in `denowatts-backend/src/app.module.ts:167`.
+
+### GraphQL surface — `denowatts-backend/src/user-notification/user-notification.resolver.ts`
+
+```graphql
+query    userNotificationPreferences: UserNotification!
+mutation updateUserNotificationPreferences(input: UpdateUserNotificationInput!): UserNotification!
+```
+
+Both are scoped to the caller via `@CurrentUser()` — there is no way to read or write another user's preferences, and no role decorator is needed because the user id is never an argument — `:12-23`.
+
+### Schema — `denowatts-backend/src/user-notification/schemas/user-notification.schema.ts`
+
+Collection **`user-notification`** (singular, hyphenated — unusual for this codebase), `timestamps: true`.
+
+| Field | Notes |
+|---|---|
+| `userId` | ObjectId ref `User`, **`unique: true`** — one preference document per user — `:16` |
+| `dailyStatusReport` | Boolean, defaults `true` — `:24` |
+
+### Service — `denowatts-backend/src/user-notification/user-notification.service.ts`
+
+Both methods are a single `findOneAndUpdate` with `{ new: true, upsert: true, setDefaultsOnInsert: true }`, so the document is created on first read as well as first write — a user never has to be provisioned — `:14-37`. The read uses `$setOnInsert` so a plain fetch can never overwrite an existing preference — `:16-20`.
+
+### DTO — `denowatts-backend/src/user-notification/dto/user-notification.input.ts`
+
+`UpdateUserNotificationInput` is derived from the schema with `PartialType(OmitType(...))`, stripping `_id`, `userId`, `createdAt` and `updatedAt` — so a client cannot retarget the update at another user by passing `userId` — `:5-8`.
+
+### Client — portal
+
+Query `USER_NOTIFICATION_PREFERENCES` — `denowatts-portal/src/graphql/queries/notificationQueries.ts:34`; mutation `UPDATE_USER_NOTIFICATION_PREFERENCES` — `denowatts-portal/src/graphql/mutations/notificationMutations.ts:15`. The component writes the mutation result back into the Apollo cache so the toggle reflects the server's value — `denowatts-portal/src/features/profile/components/NotificationPreferences.tsx:21-33`.
+
+### Gotchas
+
+- **The preference is inert.** No code outside the module reads `dailyStatusReport`; `denowatts-backend/src/report/services/report-daily-status.service.ts` does not consult it when choosing recipients. Turning the switch off currently changes nothing. Flag for human review.
+- **The upsert is not race-safe under concurrency** — two simultaneous first-time requests for the same user can both attempt an insert; the `unique` index on `userId` makes the loser fail with a duplicate-key error rather than returning the winner's document — `:16`.
+- **The collection name is `user-notification`** (singular, hyphenated), which does not match the Mongoose pluralization convention used elsewhere — worth knowing when querying directly — `:7`.
 
 ---
 
@@ -458,4 +515,4 @@ For the full domain vocabulary, see [[solar-glossary]].
 
 ---
 
-**Related flows:** [[events]] · [[settings]] · [[webhooks]] · [[alarm-config]] · [[companies]] · [[site]] · [[solar-glossary]]
+**Related flows:** [[events]] · [[settings]] · [[webhooks]] · [[alarm-config]] · [[companies]] · [[site]] · [[report]] · [[users]] · [[system-logs]] · [[solar-glossary]]

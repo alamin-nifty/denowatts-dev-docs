@@ -35,7 +35,24 @@ const REPOS = (() => {
   })
 })()
 
-const gh = (path) => JSON.parse(execFileSync('gh', ['api', path], { maxBuffer: 64 * 1024 * 1024 }).toString())
+// GitHub API: uses GH_TOKEN/GITHUB_TOKEN env var (fetch), falls back to gh CLI for local dev
+const gh = async (path) => {
+  const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
+  if (token) {
+    const res = await fetch(`https://api.github.com/${path}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'denowatts-docs-brain/1.0',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    })
+    if (!res.ok) throw new Error(`GitHub API ${path}: ${res.status} ${await res.text()}`)
+    return res.json()
+  }
+  // Fall back to gh CLI (local dev where gh is authenticated)
+  return JSON.parse(execFileSync('gh', ['api', path], { maxBuffer: 64 * 1024 * 1024 }).toString())
+}
 
 // ---------- local git helpers ----------
 const git = (localPath, args) =>
@@ -133,7 +150,7 @@ async function main() {
     if (useLocal) {
       try { heads[r.slug] = git(r.local, ['rev-parse', 'HEAD']) } catch { heads[r.slug] = null }
     } else {
-      try { heads[r.slug] = gh(`repos/${r.slug}/commits/${r.branch}`).sha } catch { heads[r.slug] = null }
+      try { heads[r.slug] = (await gh(`repos/${r.slug}/commits/${r.branch}`)).sha } catch { heads[r.slug] = null }
     }
   }
 
@@ -161,7 +178,7 @@ async function main() {
           base = shas.length ? `${shas[shas.length - 1]}~1` : heads[r.slug]
         } catch { base = heads[r.slug] }
       } else {
-        const commits = gh(`repos/${r.slug}/commits?sha=${r.branch}&since=${sinceDate.toISOString()}&per_page=100`)
+        const commits = await gh(`repos/${r.slug}/commits?sha=${r.branch}&since=${sinceDate.toISOString()}&per_page=100`)
         base = commits.length ? `${commits[commits.length - 1].sha}~1` : heads[r.slug]
       }
     }
@@ -179,7 +196,7 @@ async function main() {
       commits = cmp.commits
       files = cmp.files
     } else {
-      const cmp = gh(`repos/${r.slug}/compare/${base}...${head}`)
+      const cmp = await gh(`repos/${r.slug}/compare/${base}...${head}`)
       commits = cmp.commits.map((c) => ({ sha: c.sha.slice(0, 10), message: c.commit.message.split('\n')[0], author: c.commit.author?.name }))
       files = cmp.files || []
       truncated = files.length >= 300

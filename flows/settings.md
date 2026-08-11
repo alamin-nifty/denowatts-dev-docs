@@ -2,8 +2,8 @@
 title: Settings
 owner: alamin-nifty
 status: draft
-version: 3
-updated_at: 2026-06-10
+version: 4
+updated_at: 2026-08-11
 ---
 
 # Settings
@@ -50,7 +50,8 @@ The pages fall into three tiers. Each links to its own deep doc where one exists
 - **Cell Modem Plan Management** — cellular SIM/modem usage analytics *(Developer view)*
 - **System Notification** — platform-wide broadcast notifications → [[notification]]
 - **Site Launch** — fleet-wide go-live / commissioning tracker *(Developer view)*
-- **Activity Logs** — the audit trail → [[activity-logs]]
+- **Audit Trail** — who changed what, in business language (Admin + SuperAdmin) → [[audit-trail]]
+- **System Logs** — the exhaustive developer log, formerly *Activity Logs* (SuperAdmin only) → [[system-logs]]
 
 ---
 
@@ -118,7 +119,8 @@ Divider at `Header.tsx:531-534`; keys 7+ render only when `currentUser?.type ===
 | Cell Modem Plan Management | 19 | `/settings/cell-modem-management` | inline | `Header.tsx:640-652` |
 | System Notification | 16 | `/settings/system-notification` | [[notification]] | `Header.tsx:653-665` |
 | Site Launch | 17 | `/settings/site-launch` | inline | `Header.tsx:666-678` |
-| Activity Logs | 18 | `/settings/activity-logs` | [[activity-logs]] | `Header.tsx:679-691` |
+| System Logs | 18 | `/settings/system-logs` | [[system-logs]] | `Header.tsx:679-691` |
+| Audit Trail | — | `/settings/audit-trail` | [[audit-trail]] | `denowatts-portal/src/routes/_dashboard/settings/audit-trail.tsx` |
 
 > Menu keys are identifiers, not display order: array order is 1,2,3,4,5,6,12 then 7,8,9,10,11,13,14,15,19,16,17,18.
 
@@ -198,4 +200,4 @@ For the full domain vocabulary, see [[solar-glossary]].
 
 ---
 
-**Related flows:** [[authentication]] · [[companies]] · [[users]] · [[metrics]] · [[device-types]] · [[alarm-config]] · [[notification]] · [[assets]] · [[activity-logs]] · [[quote]] · [[channels]] · [[data-out]] · [[solar-glossary]]
+**Related flows:** [[authentication]] · [[companies]] · [[users]] · [[metrics]] · [[device-types]] · [[alarm-config]] · [[notification]] · [[assets]] · [[audit-trail]] · [[system-logs]] · [[quote]] · [[channels]] · [[data-out]] · [[solar-glossary]]

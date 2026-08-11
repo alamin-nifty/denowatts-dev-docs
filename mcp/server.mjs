@@ -1,6 +1,9 @@
 #!/usr/bin/env node
-// denowatts-docs-brain — MCP server (stdio) exposing the Denowatts
-// documentation as a queryable knowledge base for any agent/project.
+// denowatts-docs-brain — MCP server exposing the Denowatts docs as a knowledge base.
+//
+// Modes:
+//   stdio (default)    — for local Claude Code usage; register with: claude mcp add -s user ...
+//   HTTP               — set MCP_HTTP_PORT env var; deploy to Railway/Render/Fly for remote access
 //
 // Tools:
 //   search_docs(query, mode?)   full-text search across all flow docs
@@ -9,15 +12,12 @@
 //   check_drift()               compare GitHub repos vs last-reviewed baseline
 //   get_findings(priority?)     the verified code-review findings checklist
 //   define(term)                look a term up in the solar glossary
-//
-// Register (user scope, available in every project on this machine):
-//   claude mcp add -s user denowatts-docs-brain -- node <abs path>/mcp/server.mjs
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { execFileSync } from 'node:child_process'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildCitationIndex } from '../scripts/drift-check.mjs'
@@ -117,12 +117,16 @@ server.registerTool('check_drift', {
   },
 }, async ({ sinceDays } = {}) => {
   const args = [join(ROOT, 'scripts', 'drift-check.mjs'), '--json']
-  if (sinceDays) args.push('--since-days', String(sinceDays))
+  if (sinceDays) {
+    args.push('--since-days', String(sinceDays))
+  } else if (!existsSync(join(ROOT, 'scripts', 'drift-state.json'))) {
+    // No stored baseline (common on remote deployments) — default to last 7 days
+    args.push('--since-days', '7')
+  }
   try {
     const out = execFileSync('node', args, { maxBuffer: 32 * 1024 * 1024 }).toString()
     return text(out)
   } catch (e) {
-    // exit code 2 = drift found; stdout still has the JSON
     if (e.status === 2 && e.stdout) return text(e.stdout.toString())
     return text(`drift check failed: ${e.message}`)
   }
@@ -153,4 +157,48 @@ server.registerTool('define', {
   return text(lines.length ? lines.slice(0, 10).join('\n') : `"${term}" not found in the glossary.`)
 })
 
-await server.connect(new StdioServerTransport())
+// ---------- transport: HTTP when MCP_HTTP_PORT is set, stdio otherwise ----------
+const HTTP_PORT = process.env.MCP_HTTP_PORT ? Number(process.env.MCP_HTTP_PORT) : null
+
+if (HTTP_PORT) {
+  const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js')
+  const { createServer } = await import('node:http')
+  const { randomUUID } = await import('node:crypto')
+
+  const secret = process.env.MCP_SECRET || null
+
+  const readBody = (req) => new Promise((resolve) => {
+    const chunks = []
+    req.on('data', (c) => chunks.push(c))
+    req.on('end', () => {
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString())) }
+      catch { resolve(undefined) }
+    })
+  })
+
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() })
+  await server.connect(transport)
+
+  createServer(async (req, res) => {
+    // Bearer-token auth (optional — only enforced when MCP_SECRET is set)
+    if (secret && req.headers['authorization'] !== `Bearer ${secret}`) {
+      res.writeHead(401, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Unauthorized' }))
+      return
+    }
+
+    const url = (req.url || '').split('?')[0]
+    if (url === '/mcp') {
+      const body = req.method === 'POST' ? await readBody(req) : undefined
+      await transport.handleRequest(req, res, body)
+    } else if (url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok')
+    } else {
+      res.writeHead(404).end()
+    }
+  }).listen(HTTP_PORT, () => {
+    console.error(`denowatts-docs-brain HTTP on :${HTTP_PORT}${secret ? ' [auth on]' : ' [no auth]'}`)
+  })
+} else {
+  await server.connect(new StdioServerTransport())
+}

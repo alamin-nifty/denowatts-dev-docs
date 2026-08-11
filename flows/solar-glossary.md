@@ -455,6 +455,7 @@ Data is marked as deleted but not permanently removed (deletedAt timestamp set).
 
 - **[[authentication]]** — User roles and permissions
 - **[[site]]** — Individual site configuration and KPIs
+- **[[energy-model]]** — Expected vs learned energy, PVsyst simulation, post-processing and capacity tests
 - **[[portfolio]]** — Fleet-wide energy models and status aggregation
 - **[[status]]** — Real-time monitoring of connection and alarm states
 - **[[settings]]** — System configuration and device management
