@@ -1,9 +1,9 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback, memo } from 'react'
 import mermaid from 'mermaid'
 import sections from './data/sections.json'
 import pages from './data/pages.generated.json'
 import aliasMap from './data/aliases.json'
-import { renderDoc } from './md.js'
+import { renderDoc, mapPageAnchors } from './md.js'
 
 mermaid.initialize({ startOnLoad: false, theme: 'neutral', fontFamily: 'inherit' })
 
@@ -38,10 +38,14 @@ const SECTIONS = sections.map((s) => {
     .map((p) => ({ ...p, aliases: aliasMap[p.route] || [] }))
   const flowFile = s.flow ? s.flow.split('/').pop() : null
   const rawMd = flowFile ? FLOWS[flowFile] : null
+  const doc = rawMd ? renderDoc(rawMd, FLOW_MAP) : null
   return {
     ...s,
     pages: subPages,
-    doc: rawMd ? renderDoc(rawMd, FLOW_MAP) : null,
+    doc,
+    // route → candidate heading anchors in the doc, best match first, so
+    // picking a page in the sidebar jumps to the writing about it.
+    anchors: doc ? mapPageAnchors(doc.html, subPages) : {},
     documented: Boolean(rawMd),
   }
 })
@@ -94,9 +98,41 @@ function Logo() {
   )
 }
 
+// Scroll to a heading in the prose, waiting a few frames for the section to
+// mount when the jump crosses sections, then flash it so the eye lands on it.
+function scrollToAnchor(id, tries = 15) {
+  const el = document.getElementById(id)
+  if (!el) {
+    if (tries > 0) requestAnimationFrame(() => scrollToAnchor(id, tries - 1))
+    return
+  }
+  // Smooth reads well over a screen or two; across a long doc (the glossary is
+  // ~18,000px) the browser's glide takes seconds, so jump straight there.
+  const far = Math.abs(el.getBoundingClientRect().top) > window.innerHeight * 2
+  el.scrollIntoView({ behavior: far ? 'auto' : 'smooth', block: 'start' })
+  // Only ever one heading marked — including when the same one is re-picked,
+  // where removing and re-adding restarts the animation.
+  document.querySelectorAll('.anchor-flash').forEach((n) => n.classList.remove('anchor-flash'))
+  void el.offsetWidth
+  el.classList.add('anchor-flash')
+}
+
+// A doc section is only visible in the mode it was written for ('all' always).
+const audienceVisible = (aud, mode) => aud === 'all' || aud === mode
+
+// Does this section have sub-entries to show in the current mode? Drives both
+// the chevron and whether the nav item acts as a toggle.
+const hasTree = (s, mode) => Boolean(s.doc) && tocVisible(s.doc.toc, mode).some((t) => t.level === 2)
+
 export default function DocsPortal() {
   const [active, setActive] = useState(() => location.hash.replace(/^#\/?/, '') || null)
-  const [activePage, setActivePage] = useState(null)
+  // Which catalog card is expanded in "Pages in this section", and which
+  // heading the reader is currently on (shared by the sidebar tree and the
+  // right rail, so both track the same place in the doc).
+  const [openCard, setOpenCard] = useState(null)
+  const [activeHeading, setActiveHeading] = useState(null)
+  const [pendingAnchor, setPendingAnchor] = useState(null)
+  const [treeOpen, setTreeOpen] = useState(true)
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState(() => {
     // Two modes only: 'audience' (Business) and 'dev' (Developer). Any legacy
@@ -113,22 +149,58 @@ export default function DocsPortal() {
   }, [])
   const inputRef = useRef(null)
   const contentRef = useRef(null)
+  const jumpedAt = useRef(0)
 
   const go = useCallback((key) => {
     setActive(key)
-    setActivePage(null)
+    setOpenCard(null)
+    setTreeOpen(true)
     setMenuOpen(false)
     history.replaceState(null, '', key ? `#/${key}` : '#')
     if (contentRef.current) contentRef.current.scrollTop = 0
   }, [])
 
-  // Select a specific sub-page: jump to its section (if needed), highlight it
-  // in the sidebar, and expand its card. Passing null clears the selection.
-  const selectPage = useCallback((key, route) => {
-    setActive(key)
-    setActivePage(route)
-    history.replaceState(null, '', `#/${key}`)
+  // The sidebar item doubles as a disclosure: a second click on the section
+  // you're already in folds its tree away and takes you back to the top of the
+  // section; a third click opens it again.
+  const onSectionClick = useCallback((key) => {
+    if (active !== key) { go(key); return }
+    const closing = treeOpen
+    setTreeOpen(!closing)
+    if (closing && contentRef.current) contentRef.current.scrollTop = 0
+  }, [active, treeOpen, go])
+
+  // Jump to a heading of the doc that is already on screen (sidebar tree or
+  // right rail) — no re-render needed, so scroll straight away.
+  const jumpToHeading = useCallback((id) => {
+    setMenuOpen(false)
+    setActiveHeading(id)
+    jumpedAt.current = Date.now()
+    scrollToAnchor(id)
   }, [])
+
+  // Open a page from search: land on the prose that describes it when the doc
+  // names it, otherwise fall back to its card in "Pages in this section".
+  const openPage = useCallback((key, route) => {
+    const section = SECTIONS.find((s) => s.key === key)
+    const target = (section?.anchors?.[route] || []).find((c) => audienceVisible(c.aud, mode))
+    if (target) {
+      // Scroll from an effect, not here: heading ids repeat across docs
+      // ("why-this-matters"), so the jump has to wait for this section's
+      // prose to be the one in the DOM. A fresh object re-fires on re-pick.
+      setPendingAnchor({ id: target.id })
+    } else {
+      setOpenCard(route)
+    }
+  }, [mode])
+
+  // Runs after the section it targets has been committed to the DOM.
+  useEffect(() => {
+    if (!pendingAnchor) return
+    jumpedAt.current = Date.now()
+    setActiveHeading(pendingAnchor.id)
+    scrollToAnchor(pendingAnchor.id)
+  }, [pendingAnchor])
 
   useEffect(() => {
     const onHash = () => setActive(location.hash.replace(/^#\/?/, '') || null)
@@ -145,6 +217,45 @@ export default function DocsPortal() {
 
   const term = query.trim().toLowerCase()
   const activeSection = SECTIONS.find((s) => s.key === active) || null
+
+  // The doc's own sections, in the current view mode — the sidebar tree lists
+  // the h2s, the right rail the full depth.
+  const visibleToc = useMemo(
+    () => (activeSection?.doc ? tocVisible(activeSection.doc.toc, mode) : []),
+    [activeSection, mode],
+  )
+
+  // Scroll-spy, lifted here so the sidebar tree and the right rail agree on
+  // where the reader is.
+  useEffect(() => {
+    const ids = visibleToc.map((t) => t.id)
+    if (!ids.length) { setActiveHeading(null); return }
+    const scroller = document.querySelector('.main') || window
+    const onScroll = () => {
+      // A jump keeps its own heading lit while the smooth scroll plays out —
+      // otherwise the reader sees the highlight snap to a neighbour.
+      if (Date.now() - jumpedAt.current < 900) return
+      // At the very bottom the last headings can never cross the line below,
+      // so nothing would ever mark them read.
+      const el0 = scroller === window ? document.documentElement : scroller
+      if (el0.scrollTop + el0.clientHeight >= el0.scrollHeight - 4) {
+        setActiveHeading(ids[ids.length - 1])
+        return
+      }
+      // Otherwise: the last heading whose top has crossed the ~130px line.
+      let current = ids[0]
+      for (const id of ids) {
+        const el = document.getElementById(id)
+        if (!el) continue
+        if (el.getBoundingClientRect().top <= 130) current = id
+        else break
+      }
+      setActiveHeading(current)
+    }
+    onScroll()
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    return () => scroller.removeEventListener('scroll', onScroll)
+  }, [visibleToc])
 
   const searchHits = useMemo(() => {
     if (!term) return null
@@ -172,13 +283,15 @@ export default function DocsPortal() {
 
   // Open a search hit: clear the search, jump to the section, flip to
   // Developer mode when the match lives in a {dev}-only chunk, then scroll
-  // to the matched heading once the doc has rendered.
-  const openHit = useCallback((key, c) => {
+  // to the matched heading (or, for a page hit, to what the doc says about it)
+  // once the doc has rendered.
+  const openHit = useCallback((key, c, route) => {
     setQuery('')
     if (c && c.aud === 'dev' && mode !== 'dev') onMode('dev')
     go(key)
-    if (c?.id) setTimeout(() => document.getElementById(c.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 180)
-  }, [mode, onMode, go])
+    if (c?.id) setPendingAnchor({ id: c.id })
+    else if (route) openPage(key, route)
+  }, [mode, onMode, go, openPage])
 
   const documentedCount = SECTIONS.filter((s) => s.documented).length
 
@@ -210,29 +323,44 @@ export default function DocsPortal() {
           {[...new Set(SECTIONS.map((s) => s.group || 'Sections'))].map((group) => (
             <div key={group}>
               <div className="nav-label">{group}</div>
-              {SECTIONS.filter((s) => (s.group || 'Sections') === group).map((s) => (
-                <div key={s.key} className="nav-group">
-                  <button className={'nav-item' + (active === s.key ? ' active' : '') + (s.documented ? '' : ' muted')}
-                    onClick={() => go(s.key)}>
-                    <Icon name={s.icon} className="nav-icon" />
-                    <span>{s.title}</span>
-                    {s.documented
-                      ? <span className="pill-count">{s.pages.length}</span>
-                      : <span className="pill-soon">soon</span>}
-                  </button>
-                  {active === s.key && s.pages.length > 0 && (
-                    <div className="nav-children">
-                      {s.pages.map((p) => (
-                        <button key={p.route}
-                          className={'nav-child' + (activePage === p.route ? ' active' : '')}
-                          onClick={() => selectPage(s.key, p.route)}>
-                          {p.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
+              {SECTIONS.filter((s) => (s.group || 'Sections') === group).map((s) => {
+                const branches = hasTree(s, mode)
+                const open = active === s.key && treeOpen && branches
+                return (
+                  <div key={s.key} className="nav-group">
+                    <button className={'nav-item' + (active === s.key ? ' active' : '') + (s.documented ? '' : ' muted')}
+                      aria-expanded={branches ? open : undefined}
+                      onClick={() => onSectionClick(s.key)}>
+                      <Icon name={s.icon} className="nav-icon" />
+                      <span>{s.title}</span>
+                      {!s.documented && <span className="pill-soon">soon</span>}
+                      {/* Only sections that have sub-entries get a chevron, so
+                          the arrow itself says whether there's a tree here. */}
+                      {branches && (
+                        <svg className={'nav-chevron' + (open ? ' open' : '')} viewBox="0 0 24 24" fill="none"
+                          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                          aria-hidden="true">
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      )}
+                    </button>
+                    {/* The open section's own writing, one entry per h2, so a
+                        click always lands in the doc — including for backend
+                        modules that own no routes at all. */}
+                    {open && (
+                      <div className="nav-children">
+                        {visibleToc.filter((t) => t.level === 2).map((t) => (
+                          <button key={t.id}
+                            className={'nav-child' + (activeHeading === t.id ? ' active' : '')}
+                            onClick={() => jumpToHeading(t.id)}>
+                            {t.text}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           ))}
         </nav>
@@ -251,7 +379,8 @@ export default function DocsPortal() {
           ? <SearchResults hits={searchHits} term={term} onPick={openHit} />
           : activeSection
             ? <SectionView key={activeSection.key} section={activeSection} onHome={() => go(null)}
-                activePage={activePage} onSelectPage={(route) => setActivePage(route)}
+                openCard={openCard} onToggleCard={setOpenCard}
+                toc={visibleToc} activeHeading={activeHeading} onJump={jumpToHeading}
                 mode={mode} onMode={onMode} />
             : <Overview sections={SECTIONS} documentedCount={documentedCount} onPick={go} />}
       </main>
@@ -308,7 +437,9 @@ function Overview({ sections, documentedCount, onPick }) {
             <span className="tile-title">{s.title}</span>
             <span className="tile-summary">{s.summary}</span>
             <span className="tile-foot">
-              {s.documented ? `${s.pages.length} pages documented` : 'Not documented yet'}
+              {/* No page count here: a section with no routes of its own (a
+                  backend module) still has a full flow doc behind it. */}
+              {s.documented ? 'Read the flow' : 'Not documented yet'}
               <span className="tile-arrow">→</span>
             </span>
           </button>
@@ -343,19 +474,19 @@ function ModeBar({ mode, onMode }) {
   )
 }
 
-function SectionView({ section, onHome, activePage, onSelectPage, mode, onMode }) {
+function SectionView({ section, onHome, openCard, onToggleCard, toc, activeHeading, onJump, mode, onMode }) {
   // The whole "Pages in this section" list is collapsed into one trunk by
-  // default; selecting a page from the sidebar forces it open.
+  // default; it only opens itself when a card has to be shown (a page the
+  // flow doc never names).
   const [pagesOpen, setPagesOpen] = useState(false)
-  const pagesShown = pagesOpen || Boolean(activePage)
+  const pagesShown = pagesOpen || Boolean(openCard)
 
-  // When a page is selected (from the sidebar or a card click), scroll its
-  // expanded card into view.
+  // Scroll a card into view once it has been expanded.
   useEffect(() => {
-    if (!activePage) return
-    const el = document.getElementById('page-' + slug(activePage))
+    if (!openCard) return
+    const el = document.getElementById('page-' + slug(openCard))
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [activePage])
+  }, [openCard])
 
   return (
     <div className="page fade">
@@ -389,11 +520,11 @@ function SectionView({ section, onHome, activePage, onSelectPage, mode, onMode }
           {pagesShown && (
             <div className="pagelist-body fade-in">
               {section.pages.map((p) => {
-                const open = activePage === p.route
+                const open = openCard === p.route
                 return (
                   <article key={p.route} id={'page-' + slug(p.route)} className={'page-row' + (open ? ' open' : '')}>
                     <button className="page-row-head" aria-expanded={open}
-                      onClick={() => onSelectPage(open ? null : p.route)}>
+                      onClick={() => onToggleCard(open ? null : p.route)}>
                       <span className="page-row-title">
                         <h3>{p.name}</h3>
                         <code className="route">{p.route}</code>
@@ -420,7 +551,7 @@ function SectionView({ section, onHome, activePage, onSelectPage, mode, onMode }
       )}
 
       {section.documented
-        ? <FlowDoc doc={section.doc} mode={mode} />
+        ? <FlowDoc doc={section.doc} mode={mode} toc={toc} activeHeading={activeHeading} onJump={onJump} />
         : (
           <div className="empty">
             <h2>Not documented yet</h2>
@@ -439,10 +570,15 @@ const tocVisible = (toc, mode) =>
         : true,
   )
 
-function FlowDoc({ doc, mode }) {
-  const visibleToc = tocVisible(doc.toc, mode)
-  const [activeId, setActiveId] = useState(visibleToc[0]?.id || null)
+// The doc body is one big innerHTML blob, and React re-applies it on every
+// re-render of its owner — which throws away mermaid's rendered SVGs and any
+// anchor flash sitting on a heading. Memoised, so scroll-spy updates (which
+// change nothing inside it) leave the prose alone.
+const Prose = memo(function Prose({ html }) {
+  return <article className="prose reveal" dangerouslySetInnerHTML={{ __html: html }} />
+})
 
+function FlowDoc({ doc, mode, toc, activeHeading, onJump }) {
   // Render mermaid diagrams — self-healing. Anything that resets the
   // article's HTML (mode switch, navigation, HMR) restores the raw fenced
   // source; this re-renders any diagram whose SVG has gone missing, and a
@@ -465,37 +601,18 @@ function FlowDoc({ doc, mode }) {
     if (article) mo.observe(article, { childList: true, subtree: true })
     return () => { alive = false; mo.disconnect() }
   }, [doc, mode])
-  useEffect(() => {
-    const ids = tocVisible(doc.toc, mode).map((t) => t.id)
-    if (!ids.length) return
-    const scroller = document.querySelector('.main') || window
-    const onScroll = () => {
-      // The active heading is the last one whose top has crossed the ~130px line.
-      let current = ids[0]
-      for (const id of ids) {
-        const el = document.getElementById(id)
-        if (!el) continue
-        if (el.getBoundingClientRect().top <= 130) current = id
-        else break
-      }
-      setActiveId(current)
-    }
-    onScroll()
-    scroller.addEventListener('scroll', onScroll, { passive: true })
-    return () => scroller.removeEventListener('scroll', onScroll)
-  }, [doc, mode])
 
   return (
     <div className={'doc-layout mode-' + mode}>
       {/* keyed by mode so switching replays the top-to-bottom reveal */}
-      <article key={mode} className="prose reveal" dangerouslySetInnerHTML={{ __html: doc.html }} />
-      {visibleToc.length > 0 && (
+      <Prose key={mode} html={doc.html} />
+      {toc.length > 0 && (
         <aside className="toc">
           <div className="toc-label">On this page</div>
-          {visibleToc.map((t) => (
+          {toc.map((t) => (
             <a key={t.id} href={'#' + t.id}
-              className={'toc-link toc-l' + t.level + (activeId === t.id ? ' active' : '')}
-              onClick={(e) => { e.preventDefault(); document.getElementById(t.id)?.scrollIntoView({ behavior: 'smooth' }) }}>
+              className={'toc-link toc-l' + t.level + (activeHeading === t.id ? ' active' : '')}
+              onClick={(e) => { e.preventDefault(); onJump(t.id) }}>
               {t.text}
             </a>
           ))}
@@ -517,7 +634,8 @@ function SearchResults({ hits, term, onPick }) {
         : (
           <div className="results">
             {hits.map((h, i) => (
-              <button key={i} className="result" onClick={() => onPick(h.s.key, h.type === 'doc' ? h.c : null)}>
+              <button key={i} className="result"
+                onClick={() => onPick(h.s.key, h.type === 'doc' ? h.c : null, h.type === 'page' ? h.p.route : null)}>
                 <span className="result-kind">{h.type === 'section' ? 'Section' : h.type === 'page' ? 'Page' : 'In doc'}</span>
                 <span className="result-title">
                   {h.type === 'section' ? h.s.title

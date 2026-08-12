@@ -144,18 +144,24 @@ body {
 .nav-item.active .nav-icon { color: var(--gold-deep); }
 .nav-item.muted { color: var(--ink-faint); }
 .nav-icon { width: 17px; height: 17px; flex: none; color: var(--ink-faint); }
-.pill-count {
-  font-size: 11px; font-weight: 700; color: #fff;
-  background: var(--gold); border-radius: 20px; padding: 1px 8px; min-width: 22px; text-align: center;
+/* Disclosure arrow — present only when the section has a tree to open */
+.nav-chevron {
+  width: 15px; height: 15px; flex: none; color: var(--ink-faint);
+  transition: transform .2s, color .12s;
 }
+.nav-item:hover .nav-chevron { color: var(--ink-soft); }
+.nav-item.active .nav-chevron { color: var(--gold-deep); }
+.nav-chevron.open { transform: rotate(180deg); }
 .pill-soon {
   font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
   color: var(--ink-faint); border: 1px solid var(--line); border-radius: 20px; padding: 1px 7px;
 }
 .nav-children { display: flex; flex-direction: column; margin: 2px 0 4px 24px; border-left: 1px solid var(--line); }
 .nav-child {
-  text-decoration: none; color: var(--ink-soft); font-size: 13.5px;
+  text-decoration: none; color: var(--ink-soft); font-size: 13px; line-height: 1.35;
   padding: 5px 12px; border-radius: 0 6px 6px 0; transition: background .12s, color .12s;
+  /* headings, not page names now: let long ones wrap to a second line */
+  overflow-wrap: anywhere;
 }
 .nav-child { border: 0; background: transparent; cursor: pointer; font: inherit; text-align: left; }
 .nav-child:hover { background: var(--line-soft); color: var(--gold-deep); }
@@ -238,6 +244,18 @@ body {
   border-radius: 5px; padding: 1px 5px; font-size: 11.5px;
 }
 
+/* Landing marker: the heading a sidebar page jumped to glows once, so it's
+   obvious which part of the writing answers that page. */
+.anchor-flash { animation: anchorFlash 1.6s ease both; }
+@keyframes anchorFlash {
+  0% { background: var(--gold-tint); box-shadow: -10px 0 0 var(--gold-tint), 10px 0 0 var(--gold-tint); }
+  55% { background: var(--gold-tint); box-shadow: -10px 0 0 var(--gold-tint), 10px 0 0 var(--gold-tint); }
+  100% { background: transparent; box-shadow: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .anchor-flash { animation: none; }
+}
+
 /* Top-to-bottom "writing" reveal — replays whenever the prose remounts (mode switch) */
 .prose.reveal { animation: writeIn .6s ease both; }
 @keyframes writeIn {
@@ -303,7 +321,7 @@ body {
 .pagelist-body { border: 1px solid var(--line); border-top: 0; border-radius: 0 0 10px 10px; padding: 10px; }
 .page-row {
   border: 1px solid var(--line); border-radius: 9px;
-  margin-bottom: 6px; background: var(--surface);
+  margin-bottom: 6px; background: var(--surface); scroll-margin-top: 80px;
   transition: border-color .15s, box-shadow .15s; overflow: hidden;
 }
 .page-row:hover { border-color: #d6dad6; }
@@ -353,11 +371,13 @@ body {
 /* ---- Prose (rendered markdown) — tuned for comfortable reading -------- */
 .prose { max-width: 70ch; font-size: 16px; }
 .prose > :first-child { margin-top: 0; }
+/* scroll-margin clears the 56px sticky header — a jumped-to heading has to
+   land in view, not behind it. */
 .prose h2 {
   font-weight: 700; font-size: 24px; letter-spacing: -.02em; color: var(--ink);
-  margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--line); scroll-margin-top: 28px;
+  margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--line); scroll-margin-top: 80px;
 }
-.prose h3 { font-weight: 650; font-size: 18px; color: var(--ink); margin: 32px 0 12px; letter-spacing: -.01em; scroll-margin-top: 28px; }
+.prose h3 { font-weight: 650; font-size: 18px; color: var(--ink); margin: 32px 0 12px; letter-spacing: -.01em; scroll-margin-top: 80px; }
 .prose p { margin: 16px 0; color: var(--ink-body); line-height: 1.78; }
 .prose strong { font-weight: 650; color: var(--ink); }
 .prose em { color: var(--ink-soft); }
@@ -470,7 +490,6 @@ body {
   .searchwrap input { font-size: 13px; }
   .kbd { font-size: 10px; padding: 1px 5px; display: none; }
   .nav-icon { width: 16px; height: 16px; }
-  .pill-count { font-size: 10px; padding: 1px 7px; min-width: 20px; }
   .nav-children { margin-left: 20px; }
   .doc-meta { font-size: 12px; margin-top: 10px; }
   .doc-meta-tag { font-size: 10.5px; }
@@ -656,7 +675,6 @@ body {
     border-radius: 6px;
   }
   .nav-icon { width: 15px; height: 15px; }
-  .pill-count { font-size: 9px; padding: 1px 6px; min-width: 18px; }
   .pill-soon { font-size: 9px; padding: 1px 6px; }
   .nav-children { margin-left: 16px; margin-top: 2px; }
   .nav-item.active::before { left: -14px; top: 6px; bottom: 6px; }

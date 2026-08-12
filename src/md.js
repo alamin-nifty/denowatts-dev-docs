@@ -166,3 +166,75 @@ export function renderDoc(md, flowMap = {}) {
 
   return { html, toc, meta }
 }
+
+// ---- Page → prose anchors ----------------------------------------------
+// A catalogued page (name + route) is nearly always written about somewhere
+// inside its section's flow doc. Find where, so navigating to a page can land
+// on the writing itself instead of on the page's summary card.
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// Collect every heading anchor with the audience of the <section> it sits in
+// (that wrapper is what view mode shows or hides), keyed by position in the
+// html so any match can be traced back to the heading above it.
+function headingIndex(html) {
+  const heads = []
+  let aud = 'all'
+  const re = /<section class="doc-sec" data-aud="(\w+)">|<(h[23]) id="([^"]+)"[^>]*>([\s\S]*?)<\/\2>/g
+  let m
+  while ((m = re.exec(html)) !== null) {
+    if (m[1]) { aud = m[1]; continue }
+    const text = decodeEntities(m[4].replace(/<[^>]+>/g, '')).trim().toLowerCase()
+    heads.push({ pos: m.index, id: m[3], aud, text })
+  }
+  return heads
+}
+
+const MAX_ANCHORS = 8
+
+export function mapPageAnchors(html, pages) {
+  const heads = headingIndex(html)
+  const out = {}
+  if (!heads.length) return out
+
+  // Blank out source-citation chips — same length, so every other offset holds
+  // — otherwise a route like "/reports" matches inside "src/reports/x.service.ts".
+  const hay = html.replace(/<code class="src">[\s\S]*?<\/code>/g, (m) => ' '.repeat(m.length))
+  const lower = hay.toLowerCase()
+  const headingAbove = (pos) => {
+    let hit = null
+    for (const h of heads) {
+      if (h.pos > pos) break
+      hit = h
+    }
+    return hit
+  }
+
+  for (const p of pages) {
+    const cands = []
+    const push = (h) => {
+      if (h && cands.length < MAX_ANCHORS && !cands.some((c) => c.id === h.id)) {
+        cands.push({ id: h.id, aud: h.aud })
+      }
+    }
+    const name = String(p.name || '').trim().toLowerCase()
+    const route = String(p.route || '')
+
+    // 1. A heading that names the page outright is the best possible landing.
+    if (name.length > 2) heads.filter((h) => h.text === name || h.text.includes(name)).forEach(push)
+    // 2. The route quoted in the prose — "/foo" must not match "/foo/bar".
+    if (route) {
+      const rre = new RegExp(escapeRe(route) + '(?![\\w/:?=-])', 'g')
+      let m
+      while ((m = rre.exec(hay)) !== null) push(headingAbove(m.index))
+    }
+    // 3. Last resort: the page name mentioned anywhere in the body text.
+    if (name.length > 3) {
+      const nre = new RegExp('\\b' + escapeRe(name) + '\\b', 'g')
+      let m
+      while ((m = nre.exec(lower)) !== null) push(headingAbove(m.index))
+    }
+    if (cands.length) out[p.route] = cands
+  }
+  return out
+}
