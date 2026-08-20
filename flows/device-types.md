@@ -51,7 +51,7 @@ Device types are the decoder ring for channels. When a chart, alarm, or the site
 ---
 
 ## Entry points {dev}
-- UI page — `denowatts-portal/src/pages/device-types/DeviceTypesPage.tsx`, route `/device-types` (`denowatts-portal/src/router.tsx:609-615`).
+- UI page — `denowatts-portal/src/features/device-types/DeviceTypesPage.tsx`, route `/device-types` (`denowatts-portal/src/router.tsx:609-615`).
 - Header dropdown menu item "Device Types" (menu key `5`) — `denowatts-portal/src/common/components/Header.tsx:479-486`, with the active-key mapping at `Header.tsx:420`.
 - The same `deviceTypes` query is consumed (without a dedicated page) by Site Builder, Modbus channel config, the Modbus Template settings, Metrics, and the Global Alarm config — see "Consumers" below.
 
@@ -82,7 +82,7 @@ The entire module exposes a **single query and no mutations**. Source: `denowatt
 
   Note: `_id`, `createdAt`, and `updatedAt` exist on the Mongo document (the schema uses `timestamps: true`) but are **not** declared with `@Field`, so they are not part of the GraphQL type and cannot be selected. The frontend never requests them.
 
-- **Frontend query document** — `denowatts-portal/src/graphql/queries/deviceTypeQueries.ts:3-16`, exported as `GET_DEVICE_TYPES`. It selects all eight fields (`categoryId, category, majorId, major, minorId, minor, prefix, keyMetric`). Generated TS type `DeviceTypesQuery` lives at `denowatts-portal/src/graphql/__generated__/graphql.ts:7890`.
+- **Frontend query document** — `denowatts-portal/src/graphql/queries/deviceTypeQueries.ts:3-16`, exported as `GET_DEVICE_TYPES`. It selects all eight fields (`categoryId, category, majorId, major, minorId, minor, prefix, keyMetric`). The generated TS type `DeviceTypesQuery` comes from GraphQL codegen. Note that `denowatts-portal/src/graphql/__generated__/` is **gitignored and regenerated** by `graphql-codegen` on build/dev, so the file is present at runtime but not in the repo — config at `denowatts-portal/codegen.ts`.
 
 ## Services {dev}
 
@@ -145,12 +145,12 @@ Dual-purpose class: `@ObjectType()` (GraphQL) + `@Schema({ timestamps: true })` 
 
 The `deviceTypes` query is shared lookup data. Key consumers (all frontend, all read-only):
 
-- **Device Types page (this module's page)** — `denowatts-portal/src/pages/device-types/DeviceTypesPage.tsx`. Renders an Ant Design `Table` with columns Category, Major, Minor, Prefix, Key Metric (`DeviceTypesPage.tsx:84-126`). A text search box filters client-side across `category/major/minor/prefix` (case-insensitive `includes`, `DeviceTypesPage.tsx:34-49`). Rows are merged with `rowSpan` on the Category and Major columns via `getRowSpan` (`DeviceTypesPage.tsx:64-82`), which **assumes rows are already grouped/contiguous** — this only looks right because the service returns them sorted by `prefix`. `keyMetric` renders as `-` when null (`DeviceTypesPage.tsx:124`). `rowKey` is the `prefix` (`DeviceTypesPage.tsx:172`), reinforcing prefix uniqueness. Pagination is disabled — the whole catalog renders at once.
-- **Virtual Site Builder** — matches a Modbus channel id to the best device type by longest-matching dotted prefix: `findBestDeviceTypeForChannelId` sorts device types by normalized prefix length desc and returns the first whose prefix equals the channel id or is a dotted-prefix-of it (`denowatts-portal/src/pages/dashboard/site/site-builder/utils/deviceTypeChannelMatching.ts:14-28`; `prefixMatchesChannelId` at `:6-12` strips trailing dots and checks `c === p || c.startsWith(p + '.')`). Wired via `SiteBuilderPage.tsx:306-307` → `useChannelPaletteData.ts:80-85` → `buildChannelPillSections.ts`.
-- **Channel Modbus config** — `denowatts-portal/src/pages/dashboard/site/channel-configuration/components/Modbus.tsx:86,337` looks up a device type by prefix.
+- **Device Types page (this module's page)** — `denowatts-portal/src/features/device-types/DeviceTypesPage.tsx`. Renders an Ant Design `Table` with columns Category, Major, Minor, Prefix, Key Metric (`DeviceTypesPage.tsx:84-126`). A text search box filters client-side across `category/major/minor/prefix` (case-insensitive `includes`, `DeviceTypesPage.tsx:34-49`). Rows are merged with `rowSpan` on the Category and Major columns via `getRowSpan` (`DeviceTypesPage.tsx:64-82`), which **assumes rows are already grouped/contiguous** — this only looks right because the service returns them sorted by `prefix`. `keyMetric` renders as `-` when null (`DeviceTypesPage.tsx:124`). `rowKey` is the `prefix` (`DeviceTypesPage.tsx:172`), reinforcing prefix uniqueness. Pagination is disabled — the whole catalog renders at once.
+- **Virtual Site Builder** — matches a Modbus channel id to the best device type by longest-matching dotted prefix: `findBestDeviceTypeForChannelId` sorts device types by normalized prefix length desc and returns the first whose prefix equals the channel id or is a dotted-prefix-of it (`denowatts-portal/src/features/site-builder/utils/deviceTypeChannelMatching.ts:14-28`; `prefixMatchesChannelId` at `:6-12` strips trailing dots and checks `c === p || c.startsWith(p + '.')`). Wired via `SiteBuilderPage.tsx:306-307` → `useChannelPaletteData.ts:80-85` → `buildChannelPillSections.ts`.
+- **Channel Modbus config** — `denowatts-portal/src/features/site/channel-configuration/components/Modbus.tsx:86,337` looks up a device type by prefix.
 - **Modbus Template settings** — `ModbusTemplate.tsx`, `ModbusTemplateTable.tsx`, `ModbusTemplateModal.tsx`, `AddMetricModal.tsx`, `FilterModal.tsx` under `denowatts-portal/src/pages/dashboard/settings/modbus-template/components/`. `AddMetricModal.tsx:92-110` derives a unique list of `major` labels, each mapped to a two-segment prefix (`<seg0>.<seg1>`) for use as a select value. (Several of these call `refetchQueries: [GET_DEVICE_TYPES, ...]` even though no device-type mutation exists — a harmless over-refetch.)
-- **Metrics page** — `denowatts-portal/src/pages/metrics/MetricsPage.tsx:99-100,258` resolves a device type per metric.
-- **Global Alarm config** — `denowatts-portal/src/pages/dashboard/settings/global-alarm/components/AlarmConfigTable.tsx:144,172-183` builds a de-duplicated device-type option list.
+- **Metrics page** — `denowatts-portal/src/features/metrics/MetricsPage.tsx:99-100,258` resolves a device type per metric.
+- **Global Alarm config** — `denowatts-portal/src/features/settings/global-alarm/components/AlarmConfigTable.tsx:144,172-183` builds a de-duplicated device-type option list.
 
 ## Edge cases & gotchas {dev}
 - **Public GraphQL query vs. authed UI.** `deviceTypes` is `@Public()` on the backend (`device-types.resolver.ts:6`) so anyone can query it directly, but the only UI page (`/device-types`) is behind the `<App />` redirect-to-signin effect (`App.tsx:83-92`). The catalog entry says "Accessible to all authenticated users," which is true for the page but understates that the backend endpoint itself is unauthenticated.

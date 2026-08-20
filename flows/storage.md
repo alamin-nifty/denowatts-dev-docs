@@ -75,8 +75,8 @@ Sites with a security camera push their snapshots directly into the site's Photo
 ---
 
 ## Entry points {dev}
-- Denobox browser UI: `/site/:siteId/denobox` — `denowatts-portal/src/pages/dashboard/site/denobox/DenoboxPage.tsx`
-- Field-setup image upload: `denowatts-portal/src/pages/dashboard/field-setup/components/ImageUpload.tsx`
+- Denobox browser UI: `/site/:siteId/denobox` — `denowatts-portal/src/features/site/denobox/DenoboxPage.tsx`
+- Field-setup image upload: `denowatts-portal/src/features/field-setup/components/ImageUpload.tsx`
 - Event file upload: inside `EditEventForm` / `SimpleEventModal` components
 - Security camera capture: device-side POST (machine-to-machine, not user-facing)
 
@@ -164,7 +164,7 @@ query GetDownloadUrl($key: String!): String!
 
 **Returns:** A presigned S3 download URL valid for 1 hour (default `expiresInSeconds = 3600`). Sets `ResponseContentType` from the file extension and `ResponseCacheControl: no-cache`.
 
-**Frontend usage:** `GET_DOWNLOAD_URL` in `denowatts-portal/src/graphql/queries/storageQueries.ts`.
+**Frontend usage:** `GET_DOWNLOAD_URL` in `denowatts-portal/src/features/site/api/storageQueries.ts`.
 
 ---
 
@@ -184,7 +184,7 @@ query DenoboxFiles($filter: FindDenoboxFilesFilter!): [DenoboxResponse!]!
 
 **Returns:** `[DenoboxResponse]` — mixed list of folder entries and file entries (see DenoboxResponse schema below). Folders always come first.
 
-**Frontend usage:** `GET_DENOBOX_FILES` in `denowatts-portal/src/graphql/queries/storageQueries.ts`, called from `DenoboxPage.tsx` with `fetchPolicy: 'network-only'`.
+**Frontend usage:** `GET_DENOBOX_FILES` in `denowatts-portal/src/features/site/api/storageQueries.ts`, called from `DenoboxPage.tsx` with `fetchPolicy: 'network-only'`.
 
 ---
 

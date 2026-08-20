@@ -2,8 +2,8 @@
 title: Assets
 owner: alamin-nifty
 status: draft
-version: 2
-updated_at: 2026-06-10
+version: 3
+updated_at: 2026-08-19
 ---
 
 # Assets
@@ -69,16 +69,16 @@ The module also owns the **metric catalogue**: every named signal the platform u
 ---
 
 ## Entry points {dev}
-- Asset Management — `denowatts-portal/src/pages/dashboard/settings/asset-management/AssetManagementPage.tsx` — route `/settings/asset-management` (SuperAdmin only, wrapped in `ProtectedRoute`)
+- Asset Management — `denowatts-portal/src/features/settings/asset-management/AssetManagementPage.tsx` — route `/settings/asset-management` (SuperAdmin only, wrapped in `ProtectedRoute`)
 - Remote Management — `denowatts-portal/src/pages/dashboard/settings/remote-management/RemoteManagementPage` — route `/settings/remote-management` (SuperAdmin only)
 
 ---
 
 ## GraphQL API surface {dev}
 
-### Resolver: AssetsResolver — `denowatts-backend/src/assets/assets.resolver.ts`
+### Resolver: AssetsResolver — `denowatts-backend/src/assets/resolvers/assets.resolver.ts`
 
-Class guard: `@Roles(UserType.SUPER_ADMIN)` applies to all mutations by default; individual queries override to `@AllRoles()`.
+Class guard: `@Roles(UserType.SUPER_ADMIN)` applies by default; individual queries override to `@AllRoles()`, and **`updateAsset` overrides to `@Roles(SUPER_ADMIN, ADMIN)`** so admins can edit assets — `denowatts-backend/src/assets/resolvers/assets.resolver.ts:23,33,39,48,57`.
 
 #### Queries
 
@@ -118,7 +118,7 @@ Class guard: `@Roles(UserType.SUPER_ADMIN)` applies to all mutations by default;
 - **`createAsset(createAssetInput: CreateAssetInput!): Asset!`** — creates a new hardware asset record. SuperAdmin only.
   - Input: all Asset fields except `_id` and `deletedAt`; `config` uses `AssetConfigInput` (wrapper with per-type sub-objects)
 
-- **`updateAsset(updateAssetInput: UpdateAssetInput!): Asset!`** — updates an existing asset by `_id`. SuperAdmin only.
+- **`updateAsset(updateAssetInput: UpdateAssetInput!): Asset!`** — updates an existing asset by `_id`. **SuperAdmin *or* Admin** (`@Roles(SUPER_ADMIN, ADMIN)`); it is the one mutation that relaxes the class-level SuperAdmin guard — `denowatts-backend/src/assets/resolvers/assets.resolver.ts:57-58`.
   - Input: `UpdateAssetInput` — all Asset fields as optional except `_id` (required ID); `config` uses `UpdateAssetConfigInput`
   - Throws `BadRequestException` if `_id` is missing (resolver guard) — `assets.resolver.ts:58`
 
@@ -128,44 +128,12 @@ Class guard: `@Roles(UserType.SUPER_ADMIN)` applies to all mutations by default;
 
 ---
 
-### Resolver: MetricsResolver — `denowatts-backend/src/assets/metrics.resolver.ts`
+### MetricsResolver — moved out of this module
 
-No class-level guard. Each query/mutation uses its own guard.
+`src/assets/metrics.resolver.ts` was an **unregistered duplicate** — never listed in `AssetsModule`'s providers, so its operations were never wired into the GraphQL schema — and has been **deleted** in this release. The live resolver is `denowatts-backend/src/metrics/resolvers/metrics.resolver.ts`, provided by `MetricsModule`; its full operation list is documented in [[metrics]].
 
-#### Queries
-
-- **`metrics(getMetricsInput: GetMetricsInput): [Metric!]!`** — returns all metrics, optionally filtered. Public (`@Public()` — no auth required).
-  - Input: `GetMetricsInput` — `company` (String, optional), `channelPrefixes` (String[], optional)
-  - When `company` is provided, each `Metric` in the result gains a virtual `companyWiseName` field (the company's alias for that metric, or `null` if not aliased). Populated via MongoDB aggregation `$lookup` against `companymetrics` collection.
-  - When `channelPrefixes` is provided, expands each prefix into all intermediate dot-notation ancestors and filters metrics by `channelPrefixes $in` expanded list.
-
-- **`getChannelMetrics(filter: GetChannelMetricsInput!): [GetChannelMetricResponse!]!`**  — returns metrics relevant to a specific channel with the last reported raw value. Requires auth (no explicit role, default auth guard applies).
-  - Input: `GetChannelMetricsInput` — `channelId` (String, required), `site` (ID, required)
-  - Returns: `[GetChannelMetricResponse]` — extends Metric with `channelLastRawRecord` (String, nullable) and `lastReportedAt` (Date, nullable)
-
-- **`scalingMetrics: [ScalingMetricResponse!]!`** — returns all metrics whose name starts with `sf` (scaling factor metrics). Requires auth.
-  - Returns: `[ScalingMetricResponse]` — `_id`, `name`, `displayName` only
-
-- **`getMetricPrefixes: GetMetricPrefixesResponse`** — reads the `METRIC_PREFIX` entry from the settings collection and transforms it into a structured list. SuperAdmin only (`@Roles(UserType.SUPER_ADMIN)`).
-  - Returns: `GetMetricPrefixesResponse { _id, setting, metricPrefixes: [{ name, displayName, unit }] }`
-
-- **`lastMetricName(name: String!): LastMetricNameResponse`** — given a base metric name prefix, finds the highest-numbered existing metric with that prefix and generates the next available name. SuperAdmin only.
-  - Returns: `LastMetricNameResponse { lastMetricName, generatedMetricName }`
-
-- **`metricUnits: [String!]!`** — returns all distinct `unit` values across the metrics collection, sorted alphabetically. Requires auth.
-
-#### Mutations
-
-- **`updateMetric(updateMetricInput: UpdateMetricInput!): Metric`** — updates any field of an existing metric. Requires auth (no explicit role).
-  - Input: `UpdateMetricInput` — all Metric fields as partial + `_id` (ID, required, `@IsMongoId()`)
-
-- **`createMetric(createMetricInput: CreateMetricInput!): CreateMetricResponse`** — creates a new metric, enforcing name uniqueness. SuperAdmin only.
-  - Input: `CreateMetricInput` — all Metric fields except `_id`
-  - Returns: `CreateMetricResponse { _id, name, displayName, unit, channelPrefixes, description, isKpi, tags }`
-
----
-
-### Resolver: CompanyMetricResolver — `denowatts-backend/src/assets/company-metric.resolver.ts`
+`AssetsModule` now provides exactly `AssetsResolver, AssetsService, CompanyMetricResolver, CompanyMetricService` — `denowatts-backend/src/assets/assets.module.ts:28`.
+### Resolver: CompanyMetricResolver — `denowatts-backend/src/assets/resolvers/company-metric.resolver.ts`
 
 No class-level guard.
 
@@ -189,7 +157,7 @@ No class-level guard.
 
 ## Services {dev}
 
-### AssetsService — `denowatts-backend/src/assets/assets.service.ts`
+### AssetsService — `denowatts-backend/src/assets/services/assets.service.ts`
 
 #### `create(createAssetInput: CreateAssetInput): Asset`
 
@@ -258,69 +226,10 @@ Matrix base URL: `https://matrix.denowatts.com` — `denowatts-backend/src/commo
 
 ---
 
-### MetricsService — `denowatts-backend/src/assets/metrics.service.ts`
+### MetricsService — moved out of this module
 
-#### `findAll(filter?: GetMetricsInput): Metric[] | AggregateResult[]`
-
-- **No company:** simple `metricModel.find(metricFilter)`.
-- **With channelPrefixes:** calls `expandChannelPrefixes()` which builds all intermediate dot-notation prefixes (e.g. `"a.b.c"` → `["a", "a.b", "a.b.c"]`) and filters `channelPrefixes: { $in: expandedPrefixes }`.
-- **With company:** runs a MongoDB aggregation pipeline on `metrics` collection:
-  1. `$match` on any scalar filter fields
-  2. `$lookup` from `companymetrics` collection filtered by `company`
-  3. `$unwind` the matched company metric (preserving nulls)
-  4. `$addFields: companyWiseName` — extracts the company-specific name from the nested `metrics` array if the metric ID matches, otherwise `null`
-  5. `$project` to remove the intermediate `matchedB` field
-
-#### `create(input: CreateMetricInput): Metric`
-
-1. Validates `name` is non-empty after trim.
-2. Checks for existing metric by name (lean query). Throws `BadRequestException` if duplicate.
-3. `metricModel.create(input)`.
-
-#### `update(_id, input): Metric`
-
-- `metricModel.findByIdAndUpdate(_id, input, { new: true })`. No validation beyond Mongoose schema.
-
-#### `getChannelMetrics(filter: GetChannelMetricsInput): GetChannelMetricResponse[]`
-
-1. Finds the `Channel` by `channelId` and `site` via `channelsService.findOne`.
-2. Finds the most recent `ChannelRaw` record for that channel/site, sorted by `timestamp` desc.
-3. Determines `startDate` window:
-   - Modbus/Modbus-Legacy channels: `reportInterval * 2.5` minutes back (parses the `reportInterval` string e.g. `"5m"`).
-   - All other channels: 5 minutes back.
-4. Fetches all `ChannelRaw` records in `[startDate, endDate]` window.
-5. For Modbus: `activeMetricsKeys` = enabled metric names from `channel.config.metrics`. For others: all keys across all raw records.
-6. Aggregates: `$match { name: { $in: activeMetricsKeys } }`, then `$addFields: sortIndex` (position in `activeMetricsKeys` array), then `$sort: { sortIndex: 1 }`, then `$project` to remove `sortIndex`.
-7. Maps: for each metric, finds the raw record containing a value for that metric name, attaches `channelLastRawRecord` and `lastReportedAt`.
-
-#### `getScalingMetrics(): ScalingMetricResponse[]`
-
-- `metricModel.find({ name: { $regex: "^sf" } })` — all metrics starting with `sf`.
-
-#### `getMetricPrefixes(): GetMetricPrefixesResponse | null`
-
-- Reads `settings` collection: `{ setting: 'METRIC_PREFIX' }`.
-- All non-`_id`, non-`setting` keys in the document are treated as prefix entries; each entry must have `{ displayName, unit }` sub-fields.
-- Returns structured response with `metricPrefixes: [{ name, displayName, unit }]`.
-- DB reads: `settings` collection — `denowatts-backend/src/status-logs/schemas/settings.schema`
-
-#### `getLastMetricName(basePrefix: string): LastMetricNameResponse`
-
-Uses an aggregation to find the metric with the highest trailing number matching the given prefix:
-1. `$match { name: { $regex: "^{prefix}", $options: "i" } }`
-2. `$addFields: trailingDigits` (regexFind for `\d+$`) and `isExactPrefix`
-3. `$addFields: num` — 0 if exact prefix, trailing digits as int otherwise
-4. `$sort: { num: -1 }`, `$limit: 1`
-5. Logic: if highest `num === 0`, next name is `prefix1`; otherwise `prefix{num+1}`.
-6. If no match: returns `{ lastMetricName: null, generatedMetricName: prefix }`.
-
-#### `getDistinctUnits(): string[]`
-
-- `metricModel.distinct('unit')` — filters out non-strings and empty strings, returns sorted array.
-
----
-
-### CompanyMetricService — `denowatts-backend/src/assets/company-metric.service.ts`
+`src/assets/metrics.service.ts` was an **unregistered duplicate** of the live implementation and has been **deleted** in this release. The canonical service is `denowatts-backend/src/metrics/services/metrics.service.ts`, provided by `MetricsModule`. Its methods are documented in [[metrics]].
+### CompanyMetricService — `denowatts-backend/src/assets/services/company-metric.service.ts`
 
 | Method | Operation | Notes |
 |---|---|---|
@@ -449,7 +358,7 @@ Uses an aggregation to find the metric with the highest trailing number matching
 | `serialNumber` | String | Optional | Exact match filter |
 | `flag` | AssetFlag | Optional | Filter by condition flag |
 
-### CreateAssetInput — `denowatts-backend/src/assets/dto/asset.input.ts` (primary) / `denowatts-backend/src/assets/dto/create-asset.input.ts`
+### CreateAssetInput — `denowatts-backend/src/assets/dto/asset.input.ts` (primary) / `denowatts-backend/src/assets/dto/asset.input.ts`
 
 Two definitions exist. The active one used by the resolver is from `dto/asset.input.ts`:
 
@@ -562,11 +471,11 @@ Extends `DenoConfig` with `serialNumber: String` (required, `@IsNotEmpty()`).
 
 ## Business rules (cited) {dev}
 
-- Soft delete via `deletedAt` field — no asset is ever hard-deleted through the public API. The "delete" action in the UI calls `updateAsset` with `deletedAt: new Date()`. — `denowatts-backend/src/assets/assets.service.ts:86`
+- Soft delete via `deletedAt` field — no asset is ever hard-deleted through the public API. The "delete" action in the UI calls `updateAsset` with `deletedAt: new Date()`. — `denowatts-backend/src/assets/services/assets.service.ts:86`
 - Serial number must be globally unique across all non-deleted DENO and AUX_PYRANOMETER assets. — `assets.service.ts:87`
 - MAC address must be globally unique across all non-deleted RADIO and GATEWAY assets. — `assets.service.ts:104`
 - Serial number must be globally unique across all non-deleted MODEM assets. — `assets.service.ts:120`
-- A DENO asset flagged as `RETIRED` cannot have a radio paired (UI enforces this at create time; radio field is forcibly set to null). — `denowatts-portal/src/pages/dashboard/settings/asset-management/components/CreateDenoAsset.tsx:116`
+- A DENO asset flagged as `RETIRED` cannot have a radio paired (UI enforces this at create time; radio field is forcibly set to null). — `denowatts-portal/src/features/settings/asset-management/components/CreateDenoAsset.tsx:116`
 - When a DENO asset's `serialNumber` or `model` is updated, all channels with a matching `config.serialNumber` are updated in the same transaction to keep channel config in sync. — `assets.service.ts:548`
 - Calibration certificate paths are stored as filenames only in MongoDB. The full pre-signed S3 download URL is generated at query time by `StorageService`. Path pattern: `assets/{assetId}/{certificate}` — `assets.service.ts:65`
 - All Python Matrix proxy calls authenticate using `PYTHON_SERVER_SECRET` from environment config — `assets.service.ts:568`
@@ -575,17 +484,32 @@ Extends `DenoConfig` with `serialNumber: String` (required, `@IsNotEmpty()`).
 
 ---
 
+---
+
+## Asset list pipeline {dev}
+
+The asset list is built by a dedicated, type-aware aggregation rather than a blanket set of joins — `denowatts-backend/src/assets/pipelines/asset-list.pipeline.ts`.
+
+- **Pagination happens before enrichment.** A `__PREPAGINATE__` marker tells `mongoose-aggregate-paginate-v2` which stages run *after* the page is sliced, so the enrichment `$lookup`s join at most `limit` documents instead of the whole collection.
+- **Joins are per type.** `JOINS_BY_TYPE` declares exactly which enrichments each asset type owns — DENO gets `radio` + `channel`, RADIO gets `deno`, GATEWAY and MODEM get `channel`, AUX_PYRANOMETER gets none. Nothing joins what it does not need.
+- **Only GATEWAY, DENO and MODEM rows carry a `channelInfo` summary** (`CHANNEL_BACKED_TYPES`).
+- **Free-text search is per type too.** `SEARCH_FIELDS` splits each type's searchable fields into `own` (on the asset document) and `joined` (requires a join, which must therefore run *before* pagination) — e.g. searching a RADIO matches its own `macAddress` plus the joined `denoInfo.serialNumber` / `denoInfo.model`.
+
+---
+
+## Serial-number normalization {dev}
+
+Serial numbers are normalized on the way in: `upperCaseTransform` trims and upper-cases any string value, applied via `@Transform` on the schema's serial-number fields — `denowatts-backend/src/common/utils/string.ts:7-8`, `denowatts-backend/src/assets/schemas/asset.schema.ts:270`. The same transform is applied across the channel config schemas (see [[channels]]), so serials store and match consistently regardless of how they were typed.
+
 ## Data touched {dev}
 
-- `assets` collection — full CRUD — `denowatts-backend/src/assets/assets.service.ts`
+- `assets` collection — full CRUD — `denowatts-backend/src/assets/services/assets.service.ts`
 - `assets.config` — stored as `SchemaTypes.Mixed`; structure varies by `type` — `denowatts-backend/src/assets/schemas/asset.schema.ts:247`
 - `assets.calibrations` — array of `{ date, certificate }` embedded docs — `assets.schema.ts:257`
 - `assets.deletedAt` — soft-delete marker; presence/absence is the active filter — `assets.service.ts:94`
 - `channels` collection — read-only in assets module: `findOne({ 'config.serialNumber': ... })` to get channel/site info; `updateMany` when a DENO serial/model changes — `assets.service.ts:365`
-- `metrics` collection — full CRUD via MetricsService — `denowatts-backend/src/metrics/schemas/metric.schema.ts`
+- `metrics` collection — schema declared here (`denowatts-backend/src/assets/schemas/metric.schema.ts`); full CRUD lives in `MetricsModule`, see [[metrics]]
 - `companymetrics` collection — full CRUD via CompanyMetricService; `$lookup` from metrics aggregation — `denowatts-backend/src/assets/schemas/company-metric.schema.ts`
-- `channelraws` collection — read-only in MetricsService: finds latest raw record for channel metric snapshot — `metrics.service.ts:169`
-- `settings` collection — read-only in MetricsService: reads `METRIC_PREFIX` document — `metrics.service.ts:252`
 
 ---
 
@@ -611,7 +535,7 @@ Extends `DenoConfig` with `serialNumber: String` (required, `@IsNotEmpty()`).
 
 - **`metric.schema.ts` in the assets module is also a re-export.** `denowatts-backend/src/assets/schemas/metric.schema.ts` re-exports everything from `denowatts-backend/src/metrics/schemas/metric.schema.ts`. There is no separate metric schema in the assets module itself.
 
-- **`MetricsService` and `MetricsResolver` in the assets module are distinct from those in `src/metrics/`.** Despite the name overlap, `src/assets/metrics.resolver.ts` and `src/assets/metrics.service.ts` ARE the canonical implementation registered in `AssetsModule`. The files in `src/metrics/` also exist — check `src/metrics/metrics.module.ts` for whether both are registered. (Unclear which module registers the canonical resolver — flagged for human review.)
+- **The duplicate `MetricsService` / `MetricsResolver` in this module are gone.** They were never registered in `AssetsModule`, so their GraphQL operations were never live; the copies in `src/assets/` have been deleted and the canonical pair lives in `src/metrics/` (see [[metrics]]). The earlier uncertainty here is resolved. — `denowatts-backend/src/assets/assets.module.ts:28`
 
 - **The `denoInfo` and `radioInfo` filter fields in `AssetsPaginateFilterInput` have their service-side logic commented out.** The service reads `denoInfo` from the input but only uses `denoInfo.model` / `denoInfo.serialNumber` when fetching the DENO paired to a RADIO asset (step 5 of `findByPaginate`). The original filter-based approach is commented out with `// if (denoInfo?.model...)` at `assets.service.ts:314`. — `assets.service.ts:302`
 

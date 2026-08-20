@@ -96,13 +96,13 @@ A quote can also be **withdrawn** (the one status change a customer can make the
 ---
 
 ## Entry points {dev}
-- Quote list — `/settings/quote-management` — `denowatts-portal/src/pages/dashboard/quote-management/QuoteManagementPage.tsx`
-- Create single quote — `/settings/quote-management/create` — `denowatts-portal/src/pages/dashboard/quote-management/create-quote/CreateQuotePage.tsx`
-- Edit / view quote — `/settings/quote-management/:id` — `denowatts-portal/src/pages/dashboard/quote-management/quote/QuotePage.tsx`
-- Quote document view — `/settings/quote-management/:id/quote-view` — `denowatts-portal/src/pages/dashboard/quote-management/quote-view/QuoteViewPage.tsx`
-- Bulk create — `/settings/quote-management/bulk-create` — `denowatts-portal/src/pages/dashboard/quote-management/bulk-create/BulkCreatePage.tsx`
-- Order (shipping info) — `/settings/quote-management/order/:dealId` — `denowatts-portal/src/pages/dashboard/quote-management/order/OrderPage.tsx`
-- Renew — `/settings/quote-management/renew` and `/settings/quote-management/renew/:id` — `denowatts-portal/src/pages/dashboard/quote-management/renew/RenewPage.tsx`
+- Quote list — `/settings/quote-management` — `denowatts-portal/src/features/quote-management/QuoteManagementPage.tsx`
+- Create single quote — `/settings/quote-management/create` — `denowatts-portal/src/features/quote-management/create-quote/CreateQuotePage.tsx`
+- Edit / view quote — `/settings/quote-management/:id` — `denowatts-portal/src/features/quote-management/quote/QuotePage.tsx`
+- Quote document view — `/settings/quote-management/:id/quote-view` — `denowatts-portal/src/features/quote-management/quote-view/QuoteViewPage.tsx`
+- Bulk create — `/settings/quote-management/bulk-create` — `denowatts-portal/src/features/quote-management/bulk-create/BulkCreatePage.tsx`
+- Order (shipping info) — `/settings/quote-management/order/:dealId` — `denowatts-portal/src/features/quote-management/order/OrderPage.tsx`
+- Renew — `/settings/quote-management/renew` and `/settings/quote-management/renew/:id` — `denowatts-portal/src/features/quote-management/renew/RenewPage.tsx`
 
 ---
 
@@ -661,7 +661,7 @@ Normalizes SKUs by stripping the suffix after `-` (e.g., `100210-R` → `100210`
 
 ## Schemas {dev}
 
-### Quote — `denowatts-backend/src/quote/schema/quote.schema.ts`
+### Quote — `denowatts-backend/src/quote/schemas/quote.schema.ts`
 
 The `Quote` class is both a Mongoose `@Schema` and a GraphQL `@ObjectType`. The schema uses `timestamps: true` (auto-creates `createdAt` and `updatedAt`).
 
@@ -823,7 +823,7 @@ Defined in `denowatts-backend/src/quote/constants/index.ts`.
 ## Business rules (cited) {dev}
 
 - **Status is forward-only.** Updating a quote to a lower-level status is blocked for all users. Non-SUPER_ADMIN users can only change status to `WITHDRAWN`. — `denowatts-backend/src/quote/quote.service.ts:296–309`
-- **Expiry is computed, not stored.** The expiration date shown in the UI is `updatedAt + 90 days`. The field is not stored in MongoDB. — `denowatts-portal/src/pages/dashboard/quote-management/QuoteManagementPage.tsx:430`
+- **Expiry is computed, not stored.** The expiration date shown in the UI is `updatedAt + 90 days`. The field is not stored in MongoDB. — `denowatts-portal/src/features/quote-management/QuoteManagementPage.tsx:430`
 - **Quotes are never hard-deleted.** `deleteQuote` sets `status = DELETED` and `deletedAt`. DELETED quotes are filtered out of all paginate queries by default. — `quote.service.ts:1061–1072`
 - **deleteQuote is SUPER_ADMIN only.** — `quote.resolver.ts:75–79`
 - **processQuoteForSigning is ADMIN or USER only.** SUPER_ADMIN cannot sign their own quotes via this endpoint. — `quote.resolver.ts:81–88`
@@ -855,7 +855,7 @@ Defined in `denowatts-backend/src/quote/constants/index.ts`.
 
 ## Create Quote wizard (frontend) {dev}
 
-The create/edit quote form is a 5-step wizard in `denowatts-portal/src/pages/dashboard/quote-management/create-quote/components/QuoteForm.tsx`:
+The create/edit quote form is a 5-step wizard in `denowatts-portal/src/features/quote-management/create-quote/components/QuoteForm.tsx`:
 
 1. **Step 1 — Project** (`QuoteStepProject`) — owner selection, isExistingSite toggle, site selector or new site name
 2. **Step 2 — Location** (`QuoteStepLocation`) — address fields, project owner, commercial operation year

@@ -2,8 +2,8 @@
 title: Events
 owner: alamin-nifty
 status: draft
-version: 3
-updated_at: 2026-06-10
+version: 4
+updated_at: 2026-08-19
 ---
 
 # Events
@@ -27,7 +27,7 @@ flowchart LR
     PPL["People in the portal"] -->|"notes, maintenance,<br/>tickets, task flags"| EV[("Event timeline<br/>(the site logbook)")]
     PIPE["Upstream alarm pipeline"] -->|"alarms, pre-flagged<br/>with severity"| EV
     EV --> FEED["Events feed and<br/>event detail pages"]
-    FEED -->|"comments, @-mentions, upvotes,<br/>acknowledge / close"| EV
+    FEED -->|"comments, @-mentions,<br/>acknowledge / close"| EV
     EV --> ROLL["Portfolio and status<br/>feeds and counts"]
     EV -->|"new events, comments,<br/>mentions"| NOTIF["Emails and in-app<br/>bell notifications"]
 ```
@@ -52,9 +52,11 @@ Every event has a title, a start time, an optional end time (no end time = *ongo
 
 ---
 
-## Comments, mentions, and upvotes
+## Comments and mentions
 
-Each event has a comment thread. Inside a comment you can **@-mention** a colleague — they get an in-app notification pointing at the event. Every new comment also emails everyone already involved in the conversation: the event's creator, anyone who commented before, and anyone previously mentioned. Users can also **upvote** an event to signal importance (one upvote per person per event).
+Each event has a comment thread. Inside a comment you can **@-mention** a colleague — they get an in-app notification pointing at the event. Every new comment also emails everyone already involved in the conversation: the event's creator, anyone who commented before, and anyone previously mentioned.
+
+> **Removed.** Events used to support **upvotes** — a per-user endorsement stored as its own document, with `createUpvote` / `removeUpvote` mutations and an `upvotes` virtual on the Event schema. The whole feature was deleted (commit `e74dc775`, "refactor(events): remove upvote functionality and related code"): `upvotes.service.ts`, `upvotes.resolver.ts`, `schemas/upvote.schema.ts` and `dto/upvote.input.ts` are gone, and nothing in `denowatts-backend/src` references upvotes any more. Documented here only so the absence is not mistaken for an omission.
 
 ---
 
@@ -86,8 +88,8 @@ Alarms arrive from the monitoring pipeline already classified with a severity. R
 ---
 
 ## Entry points {dev}
-- Events Feed — `denowatts-portal/src/pages/dashboard/events-feed/EventsFeedPage.tsx` → route `/events-feed`
-- Event Detail — `denowatts-portal/src/pages/dashboard/events-feed/EventDetailsPage.tsx` → route `/events-feed/:id`
+- Events Feed — `denowatts-portal/src/features/events-feed/EventsFeedPage.tsx` → route `/events-feed`
+- Event Detail — `denowatts-portal/src/features/events-feed/EventDetailsPage.tsx` → route `/events-feed/:id`
 - Create Event modal launched from the feed page, from analytics charts (via `SimpleEventModal`), and inline from the site view (via `QuickEventModal`)
 
 ---
@@ -108,8 +110,6 @@ Alarms arrive from the monitoring pipeline already classified with a severity. R
 - `createComment(createCommentInput: CreateCommentInput!): CommentResponse` — add a comment; parses `@[Name](userId)` mentions; fires mention notifications and comment-cycle emails — `denowatts-backend/src/events/comments.resolver.ts:14`
 - `updateComment(updateCommentInput: UpdateCommentInput!): Comment` — update a comment's content — `denowatts-backend/src/events/comments.resolver.ts:29`
 - `removeComment(id: ID!): Comment` — hard-delete a comment — `denowatts-backend/src/events/comments.resolver.ts:33`
-- `createUpvote(createUpvoteInput: CreateUpvoteInput!): Upvote` — add an upvote to an event for the current user — `denowatts-backend/src/events/upvotes.resolver.ts:13`
-- `removeUpvote(event: ID!): Upvote` — remove the current user's upvote from an event — `denowatts-backend/src/events/upvotes.resolver.ts:20`
 
 ---
 
@@ -275,19 +275,6 @@ Simple `find` with `populate('user').populate('mentionsUsers')` — `comments.se
 
 ---
 
-### UpvotesService — `denowatts-backend/src/events/upvotes.service.ts`
-
-#### `create(createUpvoteInput, user): Upvote`
-
-1. Validates the event exists via `eventsService.findOne()` — throws if not found — `upvotes.service.ts:18`
-2. Creates upvote document `{ event, site, user }` — `upvotes.service.ts:22`
-
-#### `remove(event, user): Upvote`
-
-`findOneAndDelete({ event, user })` — throws `BadRequestException('Upvote not found')` if no matching upvote — `upvotes.service.ts:25`.
-
----
-
 ## Schemas {dev}
 
 ### Event — `denowatts-backend/src/events/schemas/event.schema.ts`
@@ -328,7 +315,6 @@ Simple `find` with `populate('user').populate('mentionsUsers')` — `comments.se
 
 **Virtuals (defined in EventsModule):**
 - `comments` — `Comment` docs where `comment.event === event._id`
-- `upvotes` — `Upvote` docs where `upvote.event === event._id`
 - `alarms` — child `Event` docs where `event.alarmGroup === event._id`
 
 **Indexes:**
@@ -350,19 +336,6 @@ Simple `find` with `populate('user').populate('mentionsUsers')` — `comments.se
 | `createdAt` | Date | auto | no | Mongoose timestamps |
 
 No explicit indexes beyond the default `_id`. The `find({ event: eventId })` query in the email cycle is unindexed — a potential performance concern on high-volume events.
-
----
-
-### Upvote — `denowatts-backend/src/events/schemas/upvote.schema.ts`
-
-| Field | Type | Required | Indexed | Purpose |
-|---|---|---|---|---|
-| `_id` | ObjectId | auto | PK | Unique identifier |
-| `event` | ObjectId → Event | yes | no | The upvoted event |
-| `site` | ObjectId → Site | yes | no | Site context for the upvote |
-| `user` | ObjectId → User | yes | no | The user who upvoted |
-
-No uniqueness constraint on `(event, user)` — the application relies on `findOneAndDelete({ event, user })` for removal but does not prevent duplicate upvotes at the DB level.
 
 ---
 
@@ -466,24 +439,12 @@ Inherits all schema field validations: `title` required, `category` required (en
 
 ---
 
-### CreateUpvoteInput — `denowatts-backend/src/events/dto/upvote.input.ts`
-
-`OmitType(Upvote, ['_id', 'user'])`:
-
-| Field | Type | Validation | Purpose |
-|---|---|---|---|
-| `event` | ObjectId | required (from schema) | The event being upvoted |
-| `site` | ObjectId | required (from schema) | Site context |
-
----
-
 ## Response types — `denowatts-backend/src/events/dto/event.response.ts` {dev}
 
 | Type | Composition | Purpose |
 |---|---|---|
 | `UserResponse` | `PickType(User, ['_id', 'firstName', 'lastName', 'status'])` (partial) | Embedded user info on events/comments |
 | `CommentResponse` | `OmitType(Comment, ['event', 'user', 'mentionsUsers'])` + typed `user: UserResponse` + `mentionsUsers: UserResponse[]` | Comment with hydrated user objects |
-| `UpvoteResponse` | `OmitType(Upvote, ['event', 'user'])` + typed `user: UserResponse` | Upvote with hydrated user |
 | `EventSiteResponse` | `PickType(Site, ['_id', 'name', 'timezone'])` | Compact site on each event |
 | `EventChannelResponse` | `PickType(Channel, ['_id', 'name', 'channelId'])` | Compact channel on each event |
 | `AlarmResponse` | `PickType(Event, ['_id', 'title', 'description', 'startDate', 'endDate'])` | Child alarms on an alarm group event |
@@ -618,7 +579,6 @@ Shared date utilities:
 17. **Comment mention format:** `@[Display Name](24-hex-ObjectId)`. Mentions are parsed server-side; invalid or deleted user IDs are silently dropped. — `comments.service.ts:44–74`
 18. **Comment notification emails go to all participants in the thread** (creator + all prior commentors + all previously mentioned users), not just the event creator. — `comments.service.ts:171–204`
 19. **DATA_CURATION site resync is a direct HTTP call.** When action is `SPREAD_CUMULATIVES` or `RECATEGORIZE`, `SimpleEventModal` POSTs to `https://matrix.denowatts.com/data_repair/site_resync` after the event is saved. Only fires when both startDate and endDate are set (not for ongoing events). Failures are non-fatal (toast warning only). — `SimpleEventModal.tsx:229–280`
-20. **Upvotes are not deduplicated at the DB level.** There is no unique index on `(event, user)`. The remove path assumes at most one upvote exists per user per event. — `upvote.schema.ts`, `upvotes.service.ts:25`
 
 ---
 
@@ -626,7 +586,6 @@ Shared date utilities:
 
 - `events` collection — core document; created/updated/soft-deleted by `EventsService`; `alarmGroup`, `isAlarmGroup`, `isAlarm` distinguish alarm events from operator-created ones
 - `comments` collection — created/updated/hard-deleted by `CommentsService`; linked to `events` via `event` field; virtual on Event schema
-- `upvotes` collection — created/deleted by `UpvotesService`; linked to `events` via `event` field; virtual on Event schema
 - `sites` collection — read-only in this module; used for site validation, timezone lookup, and manager list for notifications
 - `users` collection — read-only; fetched for notification recipients, comment mention validation, and email addresses
 - `companies` collection — read-only; fetched for `notificationSettings` on event creation
@@ -661,7 +620,6 @@ Shared date utilities:
 - **Data curation** — events that correct recorded site data (`SPREAD_CUMULATIVES`, `OVERRIDE_WITH_REMOTE`, `RECATEGORIZE`); some actions trigger a site resync in the external matrix service.
 - **Severity** — `CRITICAL / HIGH / ROUTINE`; copied onto alarm events from the alarm rule and used for notification routing.
 - **Mention** — `@[Display Name](userId)` markup inside a comment; parsed server-side into in-app `MENTION` notifications.
-- **Upvote** — a per-user endorsement of an event; stored as its own document.
 - **Soft delete / archive** — `deletedAt` hides an event permanently (audit-safe); `archivedAt` hides it while its site is archived and is reversible.
 - **Site manager** — a user attached to a site who can be auto-included as a notification recipient via company notification settings.
 

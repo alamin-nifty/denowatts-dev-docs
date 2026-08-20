@@ -6,9 +6,9 @@ Last verified: 2026-06-05
 ## Frontend files (source of truth for documented behavior)
 
 - [x] `denowatts-portal/src/router.tsx` — Tests routes (`/tests`, `/tests/:params`), CompanyRequiredRoute guard
-- [x] `denowatts-portal/src/pages/dashboard/tests/components/Tests.tsx` — Main page component, conditional render on site + chart
-- [x] `denowatts-portal/src/pages/dashboard/tests/components/TestSettings.tsx` — All controls: view mode toggle, report/chart type select, site select, date range picker, date navigation
-- [x] `denowatts-portal/src/pages/dashboard/tests/components/PlotlyDashReport/PlotlyDashReport.tsx` — Dash embedding, token refresh, zoom controls
+- [x] `denowatts-portal/src/features/tests/components/Tests.tsx` — Main page component, conditional render on site + chart
+- [x] `denowatts-portal/src/features/tests/components/TestSettings.tsx` — All controls: view mode toggle, report/chart type select, site select, date range picker, date navigation
+- [x] `denowatts-portal/src/features/tests/components/PlotlyDashReport/PlotlyDashReport.tsx` — Dash embedding, token refresh, zoom controls
 
 ## Backend files
 
@@ -18,7 +18,7 @@ Last verified: 2026-06-05
 
 ## Configuration & utilities
 
-- [x] `denowatts-portal/src/pages/dashboard/analytics/data/range-presets.ts` — Predefined date ranges (shared with Analytics)
+- [x] `denowatts-portal/src/features/analytics/data/range-presets.ts` — Predefined date ranges (shared with Analytics)
 - [x] `denowatts-portal/.env` — `VITE_PLOTLY_URL` environment variable
 
 ## Documentation completeness

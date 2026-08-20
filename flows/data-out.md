@@ -88,11 +88,11 @@ During field setup, the portal shows readings arriving in near-real time so an i
 ---
 
 ## Entry points {dev}
-- **Live Data page** (field-setup wizard step) — `denowatts-portal/src/pages/dashboard/field-setup/live-data/LiveDataPage.tsx`, route `/field-setup/gateway-setup/gateway-live-data`
-- **Verify Installation step** — `denowatts-portal/src/pages/dashboard/field-setup/verify-installation/VerifyInstallationPage.tsx`, route `/field-setup/gateway-setup/verify-installation`
-- **Live Data Modal** — `denowatts-portal/src/pages/dashboard/field-setup/components/LiveDataModal.tsx` (modal, shown during verification)
-- **Channel Map API URL copy** — `denowatts-portal/src/pages/dashboard/site/channel-map/ChannelMapPage.tsx` (clipboard copy of the external REST URL)
-- **Data Mining page** — `denowatts-portal/src/pages/dashboard/data-mining/components/DataMining.tsx` (static placeholder, no live API calls yet)
+- **Live Data page** (field-setup wizard step) — `denowatts-portal/src/features/field-setup/live-data/LiveDataPage.tsx`, route `/field-setup/gateway-setup/gateway-live-data`
+- **Verify Installation step** — `denowatts-portal/src/features/field-setup/verify-installation/VerifyInstallationPage.tsx`, route `/field-setup/gateway-setup/verify-installation`
+- **Live Data Modal** — `denowatts-portal/src/features/field-setup/components/LiveDataModal.tsx` (modal, shown during verification)
+- **Channel Map API URL copy** — `denowatts-portal/src/features/site/channel-map/ChannelMapPage.tsx` (clipboard copy of the external REST URL)
+- ~~**Data Mining page**~~ — **removed.** The static placeholder page was deleted in the portal's `pages/` → `features/` restructure (commit `c0ebed06`, "remove unused components and hooks"); nothing in `denowatts-portal/src` references it now.
 
 ---
 
@@ -132,8 +132,8 @@ query ChannelRaw($filter: ChannelRawFilterInput!) {
 - `site?: ChannelRawSite` — nullable; site info (`_id`, `name`, `timezone`) from the first matching document's site, used by the portal to format timestamps in local timezone
 
 **Frontend consumers:**
-- `denowatts-portal/src/pages/dashboard/field-setup/live-data/components/LiveDataView.tsx` — `useLazyQuery(GET_CHANNEL_RAW)`, `fetchPolicy: 'network-only'`, passes `serialNumber` or `channel` from URL search params
-- `denowatts-portal/src/pages/dashboard/field-setup/components/LiveDataModal.tsx` — `useQuery(GET_CHANNEL_RAW)`, passes `channel` from `ChannelDataCountResponse`, auto-refetches every minute
+- `denowatts-portal/src/features/field-setup/live-data/components/LiveDataView.tsx` — `useLazyQuery(GET_CHANNEL_RAW)`, `fetchPolicy: 'network-only'`, passes `serialNumber` or `channel` from URL search params
+- `denowatts-portal/src/features/field-setup/components/LiveDataModal.tsx` — `useQuery(GET_CHANNEL_RAW)`, passes `channel` from `ChannelDataCountResponse`, auto-refetches every minute
 
 ---
 
@@ -159,7 +159,7 @@ query ChannelDataCount($filter: ChannelDataCountFilterInput!) {
 - `channel: String` — channel ID (MongoDB `channelId` field)
 
 **Frontend consumer:**
-- `denowatts-portal/src/pages/dashboard/field-setup/verify-installation/components/VerifyInstallationForm.tsx` — `useQuery(GET_CHANNEL_DATA_COUNT)`, skipped until timer starts; refetches every minute; displays count per serial number; opens `LiveDataModal` on "Live data" button click
+- `denowatts-portal/src/features/field-setup/verify-installation/components/VerifyInstallationForm.tsx` — `useQuery(GET_CHANNEL_DATA_COUNT)`, skipped until timer starts; refetches every minute; displays count per serial number; opens `LiveDataModal` on "Live data" button click
 
 ---
 
@@ -174,7 +174,7 @@ All REST endpoints are under `@Controller('api/v3')`, decorated `@Public()` (byp
 **Handler:** `findChannelRawData`  
 **Query params:** `ChannelDataFilterInput` fields (`channel`, `site`, `start`, `end`, `metrics`, `order`, `page`, `limit`, `internal`)  
 **Service call:** `DeviceDataService.findChannelRawData(filter)` — applies `getMetricsString` mapping on `metrics`, then paginates `channelraw` collection, then applies `renameDocumentProperties` on each document  
-**Used by:** External third-party integrations. The portal copies an example URL to clipboard at `denowatts-portal/src/pages/dashboard/site/channel-map/ChannelMapPage.tsx:600` using the hardcoded base `https://data.denowatts.com`
+**Used by:** External third-party integrations. The portal copies an example URL to clipboard at `denowatts-portal/src/features/site/channel-map/ChannelMapPage.tsx:600` using the hardcoded base `https://data.denowatts.com`
 
 ### `GET /api/v3/channel-rollup`
 
@@ -281,7 +281,7 @@ Returns the most recently created raw document for a given channel/site pair.
 
 1. Queries `channelraw` with `{ metadata.channel: channelId, metadata.site: site }`
 2. Sorts by `createdAt: -1`, returns single document (lean)
-3. **Consumed by:** `denowatts-backend/src/assets/metrics.service.spec.ts` (test mock); no resolver or controller exposes this directly — it is an internal helper
+3. **Consumed by:** `denowatts-backend/src/metrics/services/metrics.service.spec.ts` (test mock); no resolver or controller exposes this directly — it is an internal helper
 
 ---
 
@@ -604,7 +604,7 @@ Iterates over every key in a document. If a key exists in `metricsOldPropertiesO
 - Daily rollup queries always include the `date` field, even if `metrics` is specified — `device-data.service.ts:395`
 - The `channelRaw` GraphQL query always returns newest-first (timestamp descending) regardless of the `order` field — the aggregate pipeline uses `$sort: { timestamp: -1 }` — `device-data.service.ts:262`
 - DENO devices not yet assigned to a channel (where `metadata.channel = null`) are still included in the `channelRaw` GraphQL response via the unlinked branch, resolved to their serial number via asset → radio lookup — `device-data.service.ts:266-372`
-- IRR display value shown in the portal = `(irrDeno1 + irrDeno2) / 2`, rounded — `denowatts-portal/src/pages/dashboard/field-setup/live-data/components/LiveDataView.tsx:92`
+- IRR display value shown in the portal = `(irrDeno1 + irrDeno2) / 2`, rounded — `denowatts-portal/src/features/field-setup/live-data/components/LiveDataView.tsx:92`
 
 ---
 

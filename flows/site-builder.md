@@ -78,7 +78,7 @@ Site Builder is **Admin and SuperAdmin only, end to end** — regular users can'
 
 ## Entry points {dev}
 
-UI — Site detail page tab "Virtual Site Builder", route `/site/:siteId/site-builder` — `denowatts-portal/src/pages/dashboard/site/site-builder/SiteBuilderPage.tsx`. Registered in `denowatts-portal/src/router.tsx:163-170`, wrapped in `<NonUserRoute>` (Admin/SuperAdmin only). It is one of the 15 site sub-pages described in [[site]].
+UI — Site detail page tab "Virtual Site Builder", route `/site/:siteId/site-builder` — `denowatts-portal/src/features/site-builder/SiteBuilderPage.tsx`. Registered as a TanStack file route at `denowatts-portal/src/routes/_dashboard/site/{-$siteId}/_tabs/site-builder.tsx`, guarded by `beforeLoad: requireNonUser` (Admin/SuperAdmin only). It is one of the 15 site sub-pages described in [[site]].
 
 > Note on naming: the backend NestJS module is `site-builder` (`denowatts-backend/src/site-builder/`). The portal folder is also `site-builder`. The site's general tab label is "Virtual Site Builder". All three refer to the same feature.
 
@@ -114,7 +114,7 @@ The backend `site-builder` module is intentionally thin: it is a **per-site key-
 - **Arg:** `siteId: ID` (Mongo `Types.ObjectId`).
 - **Returns** the full `SiteBuilder` document for that site (see schema below) or `null` if none exists, with `flow.nodes.channels.channel` and `lastDeployData.nodes.channels.channel` **populated** to `{ _id, name, channelId }` (`SiteBuilderChannelSummary`).
 - Delegates to `SiteBuilderService.findBySiteId(siteId)`.
-- Frontend query — `denowatts-portal/src/graphql/queries/siteBuilderQueries.ts` (`GET_SITE_BUILDER`); selects `_id, site, flow{…}, lastDeployData{…}, lastDeployAt, createdAt, updatedAt`.
+- Frontend query — `denowatts-portal/src/features/site-builder/api/siteBuilderQueries.ts` (`GET_SITE_BUILDER`); selects `_id, site, flow{…}, lastDeployData{…}, lastDeployAt, createdAt, updatedAt`.
 
 ### Mutation: `updateSiteBuilder(input: UpdateSiteBuilderInput!): SiteBuilder`
 - Resolver — `site-builder.resolver.ts:23-30`
@@ -122,7 +122,7 @@ The backend `site-builder` module is intentionally thin: it is a **per-site key-
 - **Input:** `UpdateSiteBuilderInput` (see DTO below). Key field is `site` (required); `flow`, `lastDeployData`, `lastDeployAt` optional.
 - **Returns** the upserted `SiteBuilder` (same populated shape as the query).
 - Delegates to `SiteBuilderService.update(input)` — a `findOneAndUpdate({ site }, { $set: input }, { new: true, upsert: true })`.
-- Frontend mutation — `denowatts-portal/src/graphql/mutations/siteBuilderMutations.ts` (`UPDATE_SITE_BUILDER`). Called in three ways by `SiteBuilderPage`:
+- Frontend mutation — `denowatts-portal/src/features/site-builder/api/siteBuilderMutations.ts` (`UPDATE_SITE_BUILDER`). Called in three ways by `SiteBuilderPage`:
   - `persistFlowPayload` / autosave → `{ site, flow }` only.
   - `persistDeployFlow` → `{ site, flow, lastDeployData, lastDeployAt }`.
   - Backend also calls `SiteBuilderService.update` directly inside `configChannelSiteMap` with `{ site, lastDeployData, lastDeployAt }`.
@@ -134,7 +134,7 @@ The backend `site-builder` module is intentionally thin: it is a **per-site key-
 - **Input:** `ConfigChannelSiteMapInput { site: ID }` (`denowatts-backend/src/channels/dto/update-channel.input.ts:34-39`).
 - **Returns** a status string (`"Deploy workflow successfully!"`).
 - Delegates to `ChannelsService.configChannelSiteMap(input)` (`channels.service.ts:1020-1104`).
-- Frontend mutation — `denowatts-portal/src/graphql/mutations/siteBuilderMutations.ts:63-67` (`CONFIG_CHANNEL_SITE_MAP`). Defined in the *site-builder* mutation file even though the resolver lives in channels.
+- Frontend mutation — `denowatts-portal/src/features/site-builder/api/siteBuilderMutations.ts:63-67` (`CONFIG_CHANNEL_SITE_MAP`). Defined in the *site-builder* mutation file even though the resolver lives in channels.
 
 There are **no other** site-builder GraphQL operations. No create/delete mutation exists — the row is upserted by `updateSiteBuilder` and never deleted by this module.
 
@@ -298,7 +298,7 @@ All in `denowatts-backend/src/site-builder/dto/site-builder.input.ts`. They are 
 
 ## Frontend: how the graph is built (implementation detail) {dev}
 
-State lives in the Redux `siteBuilder` slice (`denowatts-portal/src/store/slices/siteBuilderSlice.ts`). `VsbRegion` and `VsbElementType` are defined there as const string maps (UPPER_SNAKE). Region↔element mapping is `REGION_BY_ELEMENT_TYPE` (slice:116-128).
+State lives in the Redux `siteBuilder` slice (`denowatts-portal/src/features/site-builder/store/siteBuilderSlice.ts`). `VsbRegion` and `VsbElementType` are defined there as const string maps (UPPER_SNAKE). Region↔element mapping is `REGION_BY_ELEMENT_TYPE` (slice:116-128).
 
 - **Default template** (`buildTemplate`, slice:228-349): lays out fixed spine nodes left→right at computed X columns — Horizontal Benchmark (x=180) → POA Benchmark (380) → AC Meter "production meter" (1180) → Transformer (1400) → Recloser (1620) → Grid (1840). For each site block it adds a `MODULE` node (x=620, titled `Block N`) and an `INVERTER` node (x=900), both stamped with `blockNumber`, `capacityKw`, and block `note`. `generateTemplate` is dispatched only when no saved flow/lastDeployData exists.
 - **Channel pre-population** (`applyTemplatePrepopulation`, `useSiteBuilderBootstrap.ts:192-365`): partitions the site's **ACTIVE** channels by `channelId` prefix and auto-assigns them:
@@ -317,7 +317,7 @@ State lives in the Redux `siteBuilder` slice (`denowatts-portal/src/store/slices
 
 ## Business rules (cited) {dev}
 
-- **Admin/SuperAdmin only, end to end.** Frontend route guard `NonUserRoute` redirects `UserType.User` to `/not-found` — `denowatts-portal/src/views/ProtectedRoute/NonUserRoute.tsx:31-33`. Backend `siteBuilder` query, `updateSiteBuilder` mutation, and `configChannelSiteMap` mutation are all `@Roles(SUPER_ADMIN, ADMIN)` — `site-builder.resolver.ts:13,23` and `channels.resolver.ts:58`.
+- **Admin/SuperAdmin only, end to end.** The route's `beforeLoad` guard `requireNonUser` redirects `UserType.User` to `/not-found` — `denowatts-portal/src/common/utils/authGuards.ts`, applied in `denowatts-portal/src/routes/_dashboard/site/{-$siteId}/_tabs/site-builder.tsx`. Backend `siteBuilder` query, `updateSiteBuilder` mutation, and `configChannelSiteMap` mutation are all `@Roles(SUPER_ADMIN, ADMIN)` — `site-builder.resolver.ts:13,23` and `channels.resolver.ts:58`.
 - **Exactly one builder row per site.** `SiteBuilder.site` is `unique` — `site-builder.schema.ts:112-117`. `update` upserts on `{ site }`.
 - **You cannot deploy without a saved flow.** `configChannelSiteMap` throws `BadRequestException("Site builder data not found")` if `flow.nodes` is empty — `channels.service.ts:1023-1025`. The frontend also disables Deploy when there are no changes since last deploy (`hasChangesSinceLastDeploy`) — `SiteBuilderPage.tsx:1385-1386`.
 - **Deploy is full-replace, not incremental.** Every channel in the site is touched: mapped channels get `siteMap` set; all others get `siteMap: null` — `channels.service.ts:1085-1093`. Removing a channel from the graph and re-deploying clears its `siteMap`.

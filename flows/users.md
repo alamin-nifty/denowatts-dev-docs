@@ -50,10 +50,10 @@ Permissions across the entire platform start here. Whether a person can see a si
 Beyond login, two helper lookups feed other features: **manager pickers** (choosing site managers/owners) draw from the owning company *plus* every company granted access to its sites, and **@mention autocomplete** in events and notifications lists the active users in your company.
 
 ## Entry points {dev}
-- Admin UI — Settings gear -> **Users Management** (SuperAdmin-only), route `/settings/users-management` — `denowatts-portal/src/pages/dashboard/settings/users-management/UsersManagementPage.tsx`. Menu link and search box: `denowatts-portal/src/common/components/Header.tsx:552`, search component `denowatts-portal/src/pages/dashboard/settings/users-management/components/UsersManagementSettings.tsx`.
+- Admin UI — Settings gear -> **Users Management** (SuperAdmin-only), route `/settings/users-management` — `denowatts-portal/src/features/settings/users-management/UsersManagementPage.tsx`. Menu link and search box: `denowatts-portal/src/common/components/Header.tsx:552`, search component `denowatts-portal/src/features/settings/users-management/components/UsersManagementSettings.tsx`.
 - Every other page indirectly: the logged-in `User` is resolved from the JWT and injected into resolvers via `@CurrentUser()` — `denowatts-backend/src/common/decorators/current-user.decorator.ts`.
 
-> Note: there is a `CreateUserModal.tsx` in the same folder, but it is a non-wired stub (its title says "Create Event" and it renders a single "Title" field). It is **not** used by the Users Management page — `denowatts-portal/src/pages/dashboard/settings/users-management/components/CreateUserModal.tsx`. New users are created only through self-signup (auth) or the `createUser` GraphQL mutation.
+> Note: there is a `CreateUserModal.tsx` in the same folder, but it is a non-wired stub (its title says "Create Event" and it renders a single "Title" field). It is **not** used by the Users Management page — `denowatts-portal/src/features/settings/users-management/components/CreateUserModal.tsx`. New users are created only through self-signup (auth) or the `createUser` GraphQL mutation.
 
 ## User roles & types {dev}
 
@@ -274,7 +274,7 @@ All four input/response types are derived from the `User` schema class via Graph
 - Email-confirmation is the one path allowed to set `company` + `status=ACTIVE` on a PENDING user, via `isConfirmEmail=true` — `auth.service.ts:371-377`, `users.service.ts:78-116`.
 - Passwords are hashed with **argon2** only in `updatePassword`; `create`/`update` do not hash — `users.service.ts:127`. (Auth hashes before calling `create` — `auth.service.ts:67-76`.)
 - `email` is globally unique and lowercased; duplicate creates fail at the DB index — `user.schema.ts:38-41`.
-- Frontend gate: the Users Management route is wrapped in `ProtectedRoute` which redirects non-SuperAdmin to `/not-found` — `denowatts-portal/src/views/ProtectedRoute/ProtectedRoute.tsx`, `denowatts-portal/src/router.tsx:437-446`. (Backend still enforces scoping independently.)
+- Frontend gate: the Users Management route runs `beforeLoad: requireSuperAdmin`, which redirects non-SuperAdmin to `/not-found` — `denowatts-portal/src/common/utils/authGuards.ts`, applied in `denowatts-portal/src/routes/_dashboard/settings/users-management.tsx:6`. (Backend still enforces scoping independently.)
 
 ## Data touched {dev}
 - `users` (collection) — created by `create`; updated by `update`/`updatePassword`; read by `find`/`findOne`/`getUserById`/`findManagers`/`findForMentions`.

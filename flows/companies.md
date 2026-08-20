@@ -57,9 +57,9 @@ Companies are the walls between customers. Almost every other feature — users,
 ---
 
 ## Entry points {dev}
-- **Company Management** (SuperAdmin only) — `denowatts-portal/src/pages/dashboard/settings/company-management/CompanyManagementPage.tsx`, route `/settings/company-management` (`denowatts-portal/src/router.tsx:361`). List/create/edit all companies, generate/revoke API keys.
-- **Company** (own-company profile) — `denowatts-portal/src/pages/dashboard/settings/company-management/CompanyPage.tsx`, route `/settings/company` (`denowatts-portal/src/router.tsx:354`). View/edit the current user's own company and list its users.
-- **Notification Management** — `denowatts-portal/src/pages/dashboard/settings/notification-management/NotificationManagementPage.tsx`, route `/settings/notification-management`. Writes the `notificationSettings` array back onto a Company via the same `updateCompany` mutation.
+- **Company Management** (SuperAdmin only) — `denowatts-portal/src/features/settings/company-management/CompanyManagementPage.tsx`, route `/settings/company-management` (`denowatts-portal/src/router.tsx:361`). List/create/edit all companies, generate/revoke API keys.
+- **Company** (own-company profile) — `denowatts-portal/src/features/settings/company-management/CompanyPage.tsx`, route `/settings/company` (`denowatts-portal/src/router.tsx:354`). View/edit the current user's own company and list its users.
+- **Notification Management** — `denowatts-portal/src/features/settings/notification-management/NotificationManagementPage.tsx`, route `/settings/notification-management`. Writes the `notificationSettings` array back onto a Company via the same `updateCompany` mutation.
 - Both routes live under the `settings` parent which is wrapped in `CompanyRequiredRoute` (`denowatts-portal/src/router.tsx:350-351`) — a user must have a `company` to reach them.
 
 ---

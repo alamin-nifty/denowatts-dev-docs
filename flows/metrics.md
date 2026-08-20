@@ -2,8 +2,8 @@
 title: Metrics
 owner: alamin-nifty
 status: draft
-version: 2
-updated_at: 2026-06-10
+version: 3
+updated_at: 2026-08-19
 ---
 
 # Metrics
@@ -69,23 +69,25 @@ KPI metrics are derived values: instead of being read from a sensor, they're com
 ---
 
 ## Entry points {dev}
-- Metric admin (CRUD): Settings → Metrics Management — `denowatts-portal/src/pages/dashboard/settings/metrics-management/MetricsManagementPage.tsx`, route `/settings/metrics-management` (SuperAdmin only, wrapped in `ProtectedRoute` — `denowatts-portal/src/router.tsx:426`).
-- Standalone read-only metric library: route `/metrics` — `denowatts-portal/src/pages/metrics/MetricsPage.tsx` (`denowatts-portal/src/router.tsx:606`).
-- Channel-status "live metrics" table: `denowatts-portal/src/pages/dashboard/status/channel-status/components/ChannelMetricsTable.tsx` (consumes `getChannelMetrics`).
-- Modbus template builder uses `getMetricPrefixes` + `lastMetricName` for auto-naming: `denowatts-portal/src/pages/dashboard/settings/modbus-template/components/AddMetricModal.tsx`.
+- Metric admin (CRUD): Settings → Metrics Management — `denowatts-portal/src/features/settings/metrics-management/MetricsManagementPage.tsx`, route `/settings/metrics-management` (SuperAdmin only, wrapped in `ProtectedRoute` — `denowatts-portal/src/router.tsx:426`).
+- Standalone read-only metric library: route `/metrics` — `denowatts-portal/src/features/metrics/MetricsPage.tsx` (`denowatts-portal/src/router.tsx:606`).
+- Channel-status "live metrics" table: `denowatts-portal/src/features/status/channel-status/components/ChannelMetricsTable.tsx` (consumes `getChannelMetrics`).
+- Modbus template builder uses `getMetricPrefixes` + `lastMetricName` for auto-naming: `denowatts-portal/src/features/settings/modbus-template/components/AddMetricModal.tsx`.
 
 ---
 
 ## ⚠️ Module duplication note {dev}
 
-There are **two** `MetricsResolver` + `MetricsService` class pairs in the backend, with byte-for-byte near-identical logic:
+> **Resolved in this release.** There used to be **two** near-identical `MetricsResolver` + `MetricsService` class pairs — the live one in `src/metrics/` and an unregistered dead copy in `src/assets/`. The dead copies (`src/assets/metrics.resolver.ts`, `src/assets/metrics.service.ts`, and their spec) have now been **deleted**. There is exactly one implementation.
 
 | Location | Status |
 |---|---|
-| `denowatts-backend/src/metrics/metrics.resolver.ts` + `metrics.service.ts` | **ACTIVE.** Registered as providers in `MetricsModule` (`src/metrics/metrics.module.ts:25`), and `MetricsModule` is imported in `AppModule` (`src/app.module.ts:39,155`). This is the live GraphQL implementation. |
-| `denowatts-backend/src/assets/metrics.resolver.ts` + `metrics.service.ts` | **DEAD CODE.** Neither class is referenced by `AssetsModule` (`src/assets/assets.module.ts:28` providers list contains only `AssetsResolver, AssetsService, CompanyMetricResolver, CompanyMetricService`) nor by any other module. A repo-wide grep for `MetricsResolver`/`MetricsService` shows the assets copies are imported only by their own spec file (`src/assets/metrics.service.spec.ts`). They are never instantiated by Nest, so their GraphQL operations are never wired into the schema. |
+| `denowatts-backend/src/metrics/resolvers/metrics.resolver.ts` + `denowatts-backend/src/metrics/services/metrics.service.ts` | **The only implementation.** Registered as providers in `MetricsModule` (`denowatts-backend/src/metrics/metrics.module.ts`), which `AppModule` imports. |
+| ~~`src/assets/metrics.resolver.ts` + `src/assets/metrics.service.ts`~~ | **Deleted.** Was never referenced by `AssetsModule`, so it was never wired into the GraphQL schema. |
 
-How the confusion is avoided at runtime: the two resolvers register the **same GraphQL operation names** (`metrics`, `updateMetric`, `getChannelMetrics`, `scalingMetrics`, `createMetric`, `getMetricPrefixes`, `lastMetricName`, `metricUnits`). If both were registered, Apollo would throw a duplicate-field error at schema build. Because only the `src/metrics/` resolver is in a registered module, there is no collision.
+Both classes also moved into `resolvers/` and `services/` subdirectories within `src/metrics/` as part of the same restructure. `AssetsModule` now provides only `AssetsResolver, AssetsService, CompanyMetricResolver, CompanyMetricService` — `denowatts-backend/src/assets/assets.module.ts:28`.
+
+The duplication mattered because both resolvers declared the **same GraphQL operation names** (`metrics`, `updateMetric`, `getChannelMetrics`, `scalingMetrics`, `createMetric`, `getMetricPrefixes`, `lastMetricName`, `metricUnits`); registering both would have thrown a duplicate-field error at schema build. That hazard is now gone.
 
 **The schema and DTOs are genuinely shared, not duplicated:**
 - `src/assets/schemas/metric.schema.ts` is a **pure re-export** of `src/metrics/schemas/metric.schema.ts` (its own header comment: *"Single source of truth: metric model lives in `src/metrics/schemas/metric.schema.ts`"*).
@@ -125,7 +127,7 @@ A metric record carries:
 
 ## GraphQL API surface {dev}
 
-All operations are defined on `MetricsResolver` — `denowatts-backend/src/metrics/metrics.resolver.ts`. Company-translation operations live on a separate resolver in the assets module (see below).
+All operations are defined on `MetricsResolver` — `denowatts-backend/src/metrics/resolvers/metrics.resolver.ts`. Company-translation operations live on a separate resolver in the assets module (see below).
 
 ### Query `metrics` → `[Metric]`
 - Resolver: `findAll`, `src/metrics/metrics.resolver.ts:24`. Decorated `@Public()` (no auth required).
@@ -180,7 +182,7 @@ All operations are defined on `MetricsResolver` — `denowatts-backend/src/metri
 - Service: `MetricsService.getDistinctUnits`.
 
 ### Company-metric operations (assets module, ACTIVE)
-These manage the per-company name translations used by `findAll`/`paginate`. Resolver: `denowatts-backend/src/assets/company-metric.resolver.ts` (`CompanyMetricResolver`), registered in `AssetsModule`. Service: `src/assets/company-metric.service.ts`.
+These manage the per-company name translations used by `findAll`/`paginate`. Resolver: `denowatts-backend/src/assets/resolvers/company-metric.resolver.ts` (`CompanyMetricResolver`), registered in `AssetsModule`. Service: `src/assets/company-metric.service.ts`.
 - Query `companyMetric(_id)` → `CompanyMetric` — `findById`.
 - Query `companyMetrics` → `[CompanyMetric]` (`@Public()`) — `find()` all.
 - Mutation `createCompanyMetric(input: CreateCompanyMetricInput)` → `CompanyMetric` — creates `{ company }` only.
@@ -194,7 +196,7 @@ These manage the per-company name translations used by `findAll`/`paginate`. Res
 
 ## Services {dev}
 
-### MetricsService — `denowatts-backend/src/metrics/metrics.service.ts`
+### MetricsService — `denowatts-backend/src/metrics/services/metrics.service.ts`
 
 Constructor-injected dependencies (`:34`): `metricModel` (Metric), `channelModel` (Channel), `settingsModel` (Settings), `channelRawModel` (ChannelRaw), `channelsService` (ChannelsService), `dataOutService` (DeviceDataService — injected but **unused** in this file). Two cast accessors expose paginate plugins: `metricPaginateModel` (mongoose-paginate-v2) and `metricAggregatePaginateModel` (mongoose-aggregate-paginate-v2), `:44`/`:48`.
 
@@ -266,7 +268,7 @@ Constructor-injected dependencies (`:34`): `metricModel` (Metric), `channelModel
 - `metricModel.distinct("unit")`, filters to strings, trims, drops empties, sorts via `localeCompare`.
 - DB reads: `metrics`. No writes.
 
-### CompanyMetricService — `denowatts-backend/src/assets/company-metric.service.ts` (ACTIVE, supporting)
+### CompanyMetricService — `denowatts-backend/src/assets/services/company-metric.service.ts` (ACTIVE, supporting)
 Thin CRUD over the `companymetrics` collection: `getCompanyMetrics()` (`find()`), `getCompanyMetric(_id)` (`findById`), `createCompanyMetric({ company })` (creates with only the `company` field), `updateCompanyMetric(_id, input)` (`findByIdAndUpdate ... { new: true }` — used to persist the `metrics` translation array), `deleteCompanyMetric(_id)` (`findByIdAndDelete`). No validation beyond what the schema/index enforce.
 
 ---

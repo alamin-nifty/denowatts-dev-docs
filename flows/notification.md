@@ -58,18 +58,20 @@ A bell notification is always a per-recipient record fed by alarm dispatch or co
 
 - **Company-level settings drive delivery.** Each company maintains a grid of rules — one per alarm severity and event category — choosing site managers and/or specific named users, and whether each rule sends email, in-app, or both, with a master on/off per rule. See [[settings]] and [[companies]].
 - **Site-level preferences are saved but not yet active.** A site can record per-alarm-rule delivery preferences (channels, delays, extra emails), and the screen for it requires the Enterprise plan or an administrator — but the alarm and event dispatch paths do not read these preferences today. They appear to be groundwork for a future or partially built feature (flagged for review).
-- **Each person has one personal preference of their own** — a switch on their Profile page for the daily status report email. It is stored per user and defaults to on. See *Per-user notification preferences* below.
+- **Each person has one personal preference of their own** — a switch on their Profile page for the daily status report email, plus a "Send Report Now" button that emails them a copy immediately. See *Per-user notification preferences* below and [[report]].
 - **Only platform administrators (Super Admins)** can create or edit the system banner.
 
 ---
 
 ## Per-user notification preferences
 
-Separate from the company-wide grid, every user has their **own** preference record, edited on their Profile page. Today it holds a single switch: whether they receive the **daily status report email**. It defaults to on, and the record is created automatically the first time the page is opened — nobody has to be provisioned.
+Separate from the company-wide grid, every user has their **own** preference record, edited on their Profile page. Today it holds a single switch: whether they receive the **daily status report email**. The record is created automatically the first time the page is opened — nobody has to be provisioned. The same card also carries a **Send Report Now** button that sends the caller a copy on demand, bypassing the schedule and the opt-in flag entirely.
 
 This is the only notification setting an ordinary user controls for themselves; everything else is decided by their company's rules.
 
-> **Not yet wired up.** The preference is stored and editable, but **no backend code reads `dailyStatusReport` when sending the daily status report** — the flag has no effect on delivery today. It is groundwork, like the site-level preferences above. Flagged for human review — `denowatts-backend/src/user-notification/`, and the report path at `denowatts-backend/src/report/services/report-daily-status.service.ts`, which does not consult it.
+> **Now wired up (changed).** This preference used to be inert. The daily status report send path reads it: `getOptedInCompanyRecipients` and `getOptedInSuperAdminRecipients` both query `usernotifications` for `dailyStatusReport: true` and deliver only to those users — `denowatts-backend/src/report/services/report-daily-status.service.ts`.
+>
+> One subtlety survives: the scheduled job requires an **existing document** with the flag true. The schema default is `true`, but a user who has never opened their Profile page has no document at all and is therefore *excluded*, not defaulted in. The Profile card seeds the document on first view, so in practice anyone who has visited the page is opted in — `denowatts-portal/src/features/profile/components/NotificationPreferences.tsx`.
 
 ---
 
@@ -133,7 +135,9 @@ Query `USER_NOTIFICATION_PREFERENCES` — `denowatts-portal/src/graphql/queries/
 
 ### Gotchas
 
-- **The preference is inert.** No code outside the module reads `dailyStatusReport`; `denowatts-backend/src/report/services/report-daily-status.service.ts` does not consult it when choosing recipients. Turning the switch off currently changes nothing. Flag for human review.
+- **Absence is not the schema default.** The schema defaults `dailyStatusReport` to `true`, but the scheduled send matches on `{ dailyStatusReport: true }` against existing documents only — a user with no document receives nothing. — `denowatts-backend/src/report/services/report-daily-status.service.ts`
+- **The card is hidden for users without a company**, so such a user never gets a preference document and is silently excluded from the send — `denowatts-portal/src/features/profile/components/NotificationPreferences.tsx`.
+- **"Send Report Now" ignores the toggle.** The on-demand mutation delivers to the caller regardless of their opt-in state — `denowatts-backend/src/report/resolvers/report-daily-status.resolver.ts`.
 - **The upsert is not race-safe under concurrency** — two simultaneous first-time requests for the same user can both attempt an insert; the `unique` index on `userId` makes the loser fail with a duplicate-key error rather than returning the winner's document — `:16`.
 - **The collection name is `user-notification`** (singular, hyphenated), which does not match the Mongoose pluralization convention used elsewhere — worth knowing when querying directly — `:7`.
 
@@ -457,7 +461,7 @@ Configured via `NotificationsPage` (site tab) — available only to Super Admins
 - **In-app notifications are fire-and-forget:** `createMany` has no `await` and no error handling — a DB failure during bulk insert is silently ignored — `denowatts-backend/src/notification/notification.service.ts:20`
 - **System notification is a singleton:** `create()` returns the existing record without creating a new one if any document already exists in the collection — `denowatts-backend/src/notification/system-notification.service.ts:15`
 - **`readNotifications` ignores `read: true` documents:** both `updateMany` and `updateOne` filter on `read: false`, so already-read notifications are not re-touched — `denowatts-backend/src/notification/notification.service.ts:49–56`
-- **Site-level notification requires Enterprise plan or Super Admin:** `NotificationsPage` renders a "Notification requires Enterprise subscription plan" message for non-enterprise, non-superadmin users — `denowatts-portal/src/pages/dashboard/site/notifications/components/Notifications.tsx:150`
+- **Site-level notification requires Enterprise plan or Super Admin:** `NotificationsPage` renders a "Notification requires Enterprise subscription plan" message for non-enterprise, non-superadmin users — `denowatts-portal/src/features/site/notifications/components/Notifications.tsx:150`
 - **Comment notifications only sent to @-mentioned users (in-app), but email goes to full comment cycle:** in-app `MENTION` notifications target only the explicitly mentioned user IDs; email goes to creator + all commenters + all mention users — `denowatts-backend/src/events/comments.service.ts:116–134`
 - **Alarm-level in-app `senderName` is hardcoded:** webhook alarm processing uses `senderName: "Trinity Trinity"` in notification metadata — this appears to be a placeholder left over from development — `denowatts-backend/src/webhooks/webhook.service.ts:499`
 - **Support email BCC is hardcoded:** `asayeed@denowatts.com` is always BCC'd on alarm notification emails in `WebhookService.processAlarm` — `denowatts-backend/src/webhooks/webhook.service.ts:517`
@@ -465,7 +469,7 @@ Configured via `NotificationsPage` (site tab) — available only to Super Admins
 - **Company notification settings require `isActive: true` to fire:** `collectAlarmNotificationRecipientIdSets` skips any setting where `isActive` is `false` — `denowatts-backend/src/webhooks/webhook.service.ts:148`
 - **Mention syntax must be exact format:** the comment service only recognizes `@[Full Name](24-hex-char ObjectId)` format; other mention-like text is ignored — `denowatts-backend/src/events/comments.service.ts:44`
 - **System notification modal shown once per `updatedAt` change:** `localStorage.systemNotificationStatus` stores the last `updatedAt` seen; modal re-appears only when the admin saves a newer update — `denowatts-portal/src/App.tsx:125`
-- **`NotificationManagementPage` cleans stale user IDs on save:** `otherUserIds` entries that no longer correspond to active users in the company are stripped before calling `updateCompany` — `denowatts-portal/src/pages/dashboard/settings/notification-management/NotificationManagementPage.tsx:432`
+- **`NotificationManagementPage` cleans stale user IDs on save:** `otherUserIds` entries that no longer correspond to active users in the company are stripped before calling `updateCompany` — `denowatts-portal/src/features/settings/notification-management/NotificationManagementPage.tsx:432`
 - **`paginateNotifications` is scoped to the current user:** query filter is always `{ recipient: user._id }` — users cannot see each other's notifications — `denowatts-backend/src/notification/notification.service.ts:28`
 
 ---

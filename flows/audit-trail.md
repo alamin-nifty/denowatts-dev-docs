@@ -2,8 +2,8 @@
 title: Audit Trail
 owner: alamin-nifty
 status: draft
-version: 1
-updated_at: 2026-08-11
+version: 2
+updated_at: 2026-08-19
 ---
 
 # Audit Trail
@@ -53,13 +53,13 @@ Two properties are deliberate: **recording never blocks or breaks the action** b
 
 ## What gets recorded
 
-Fifty-three named actions, grouped into twelve categories — `denowatts-backend/src/audit-trail/audit-event.catalog.ts`:
+**Sixty-five** named actions, grouped into twelve categories — `denowatts-backend/src/audit-trail/audit-event.catalog.ts`:
 
 | Category | Examples |
 |---|---|
-| Site configuration | site created / updated / deleted |
+| Site configuration | site created / updated / deleted, **workflow deployed** |
 | Energy model | energy model + predicted model created / updated / deleted, energy block updated |
-| Hardware | channel created / updated / deleted; asset registered / updated / calibrated / retired |
+| Hardware | channel created / updated / deleted; asset registered / updated / calibrated / retired; **gateway firmware updated / rebooted / config written / config write failed / SIM state changed** |
 | Alarms | alarm rule created / updated / deleted |
 | Reports | report template created / updated / deleted, report exported |
 | Users & access | user invited / signed up / updated / role changed / removed; site access granted / revoked |
@@ -70,7 +70,7 @@ Fifty-three named actions, grouped into twelve categories — `denowatts-backend
 | Tickets & notes | ticket opened / updated / commented / deleted; event created / updated / commented / deleted |
 | System | notification sent / failed |
 
-Each action carries a **severity** — `info`, `warning`, or `critical`. Deletions and revocations are the ones marked warning or critical, so "show me only the risky things" is one filter click.
+Each action carries a **severity** — `info`, `warning`, or `critical`. Deletions and revocations are the ones marked warning or critical, so "show me only the risky things" is one filter click. `gateway.config_write_failed` is a `warning`: a *failed* gateway write is itself an auditable event, not just a silent error — `denowatts-backend/src/audit-trail/audit-event.catalog.ts:125-129`. `site.workflow_deployed` records the channel-mapping count alongside the deployment — `:45-49`.
 
 Fourteen backend services record into the trail today: auth, sites, energy models, channels, assets, users, companies, alarm config, events, comments, report templates, storage (Denobox), and quotes.
 
@@ -91,7 +91,35 @@ Fourteen backend services record into the trail today: auth, sites, energy model
 - **Denowatts SuperAdmins** see everything.
 - **Company admins** see their own company's events plus events on any site their company owns or has access to — `denowatts-backend/src/audit-trail/audit-trail.service.ts:321-333`.
 - **Plain users see nothing** — the queries are restricted to Admin and SuperAdmin roles — `denowatts-backend/src/audit-trail/audit-trail.resolver.ts:14`.
-- A user with **no company** sees an empty trail (deliberately, not accidentally — the scope resolves to a query that matches nothing) — `:326-328`.
+- A user with **no company** sees an empty trail (deliberately, not accidentally — the scope resolves to `{ _id: { $exists: false } }`, a query that matches nothing) — `denowatts-backend/src/audit-trail/audit-trail.service.ts:338-340`.
+
+### The visibility model {dev}
+
+Access is **stamped at write time and widened at read time** — two different mechanisms, and the split matters.
+
+**At write time** the processor computes a `visibility[]` array on the event: one entry per company allowed to see it, each tagged with *why* — `denowatts-backend/src/audit-trail/audit-trail.processor.ts:67-92`.
+
+| `reason` | Which company |
+|---|---|
+| `actor` | The company of whoever performed the action — always stamped |
+| `subject` | The company acted **upon**, added only when the resource is a company (the resource id *is* the company) or a user (looked up to find their company) |
+
+Entries are de-duplicated by company id, so a user acting within their own company yields a single entry. `RESOURCE_REF_TYPES[event.resource.type]` decides whether a subject company applies at all.
+
+**Site visibility is deliberately *not* stamped.** It resolves at read time instead:
+
+```
+{ $or: [ { "visibility.company": user.company },
+         { site: { $in: <sites the company currently owns or accesses> } } ] }
+```
+
+— `denowatts-backend/src/audit-trail/audit-trail.service.ts:331-346`.
+
+That asymmetry is the design: **site history follows the site.** If a site moves to a different company, the new owner immediately sees its whole audit history, and the old owner stops seeing it — without rewriting a single stored event. Company-scoped visibility, by contrast, is frozen at the moment of the action.
+
+**The indexes follow the same shape.** Every index ends with `{ createdAt: -1, _id: -1 }` — the list sort, with `_id` breaking same-millisecond ties. There is a `visibility.company` compound index for each portal filter (category, severity, actor) plus unscoped equivalents for the super-admin view and the site tab — `denowatts-backend/src/audit-trail/schemas/audit-event.schema.ts:195-205`.
+
+`visibility` is **not exposed over GraphQL** — it is an internal access-control field — `denowatts-backend/src/audit-trail/schemas/audit-event.schema.ts:168-173`.
 
 ---
 
@@ -102,6 +130,8 @@ A subtle but important reading rule: people, sites and equipment are displayed u
 Values that are *not* references — a renamed site's old and new name, a threshold that moved from 5 to 8 — are history and stay exactly as recorded.
 
 The swap is all-or-nothing per value: if a field references three users and one has been deleted, the stored text is kept rather than showing a partly-resolved list — `:248-257`.
+
+The lookups themselves live in `AuditRefNameService` — `denowatts-backend/src/audit-trail/audit-ref-name.service.ts`. It exposes `name(ref, id)` for a single reference and `names(ref, ids)` for a batch, resolving **one query per entity type** rather than one per reference, so a page of events costs a bounded number of round trips. `AuditRefType` enumerates the catalog resource types that name a lookup-able document.
 
 ---
 

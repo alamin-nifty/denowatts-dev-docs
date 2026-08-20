@@ -2,8 +2,8 @@
 title: Energy Model
 owner: alamin-nifty
 status: draft
-version: 2
-updated_at: 2026-07-13
+version: 3
+updated_at: 2026-08-19
 ---
 
 # Energy Model
@@ -56,7 +56,7 @@ A site keeps **two** independent energy models, and it helps a newcomer to hold 
 
 Both are versioned over time (a site can have "2024 model", "2025 revised model", etc.), and both feed the same comparison against actual production. See the shared `{{Energy Model}}` glossary entry for the longer story.
 
-> **Naming gotcha:** in the backend the "Owner's" type is stored under the enum value spelled **`OWNNER`** (double-N) in places. It's a known typo, not a different concept.
+> **Naming gotcha (resolved).** The "Owner's" type used to be stored under the misspelled enum value `OWNNER` (double-N), and the Operator's type under `LEARNED`. Both were renamed: `ModelType` is now exactly `OWNER | OPERATOR` — `denowatts-backend/src/sites/schemas/energy-model.schema.ts:22-25`. Historical data written before the rename may still carry the old strings.
 
 ---
 
@@ -152,7 +152,7 @@ A `{{Capacity Test}}` is a formal, one-time exam of a brand-new plant: run it un
 
 ## Versioning: one "current" model at a time
 
-A site accumulates models over the years, but at any moment it should have exactly **one current** Owner's model and one current Operator's model (and one current predicted/capacity-test simulation). The platform enforces this automatically: when you create a new model without an end date, the platform **closes the previous current one** by stamping its end date to "now." So "Current" always points at the newest open model, and history is preserved rather than overwritten.
+A site accumulates models over the years, but at any moment it should have exactly **one current** Owner's model and one current Operator's model (and one current predicted/capacity-test simulation). The platform enforces this automatically: when you create a new model, it **closes the previous current one of the same type** by stamping its end date to **the day before the new model's start date** — not "now" — so the two never overlap and there is no gap. `startDate` is **required**. "Current" always points at the newest open model, and history is preserved rather than overwritten. — `closeCurrentModel`, `denowatts-backend/src/sites/services/energy-model.service.ts:237-248`
 
 ---
 
@@ -160,11 +160,13 @@ A site accumulates models over the years, but at any moment it should have exact
 
 - **Expected vs actual is the whole game.** The model produces "expected"; `{{EPI}}` = actual ÷ expected.
 - **Two models per site** — Owner's (design) and Operator's (learned) — kept and versioned independently.
-- **Creating a new current model auto-closes the old one** (end-dates it). One current per type.
+- **Creating a new current model auto-closes the old one**, end-dating it the day *before* the new model starts. One current per type.
+- **A model's date range may not overlap a sibling of the same site and type.** Overlap is tested on a **closed interval** — touching ranges count as overlapping, because the shared day belongs to both. Two both-open-ended models are rejected only when the new one starts on or after the existing one; the other direction is what auto-close resolves. — `denowatts-backend/src/common/utils/date-range-overlap.ts`, `denowatts-backend/src/sites/services/energy-model.service.ts:563-602`
+- **Tilt must be between -90 and 90 degrees**, inclusive — negative tilts are legal. — `denowatts-backend/src/sites/services/energy-model.service.ts:273-278`
 - **The main backend never simulates.** It stores config and calls the external Matrix (Python) service for the physics.
 - **PVsyst files are the source of the numbers.** The 8760 CSV drives the predicted curve; shade CSVs drive shading.
 - **Post-processing only subtracts losses** to bring an optimistic raw simulation down to a realistic predicted value; it never invents energy.
-- **`OWNNER` is a real enum typo** for the Owner's type — don't "fix" it without a coordinated migration.
+- **`ModelType` is `OWNER | OPERATOR`.** The old `OWNNER` typo and the old `LEARNED` name were both renamed in this release — don't reintroduce them.
 - **The Site-embedded `monthlyEnergyModel` field is effectively unused** in practice; the live model data lives in the dedicated `EnergyModel` / `learned` collections.
 
 ---
@@ -242,17 +244,21 @@ There is an authoritative in-repo spec at `denowatts-portal/src/features/site/en
 ## GraphQL API surface {dev}
 
 ### EnergyModelResolver — `denowatts-backend/src/sites/resolvers/energy-model.resolver.ts` {dev}
-All `@AllRoles()` (any authenticated user; the service still scopes by site access).
+**Roles changed.** The resolver class is now `@Roles(UserType.SUPER_ADMIN, UserType.ADMIN)` — every **mutation** is admin-only. The three read queries individually opt back out with `@AllRoles()`, so any authenticated user can read (the service still scopes by site access) — `:21-22`.
 
-| Operation | Type | Purpose | Line |
+| Operation | Type | Roles | Purpose |
 |---|---|---|---|
-| `createEnergyModel(createModelInput)` | Mutation | Create a model/version | `:24-30` |
-| `energyModelVersions(input)` | Query | Version dropdown by site/type | `:32-38` |
-| `updateEnergyModel(updateModelInput)` | Mutation | Deep-merge update (blocks/predicted/learned) | `:40-48` |
-| `updateSiteModel(...)` | Mutation | Edit one `predicted[]` item's dates/type/name | `:50-57` |
-| `siteModels(input)` | Query | Flatten each model's `predicted[]` into rows | `:59-65` |
-| `energyModel(energyModelInput)` | Query | Single model by id/site/type | `:67-73` |
-| `deleteEnergyModel(input)` | Mutation | Delete by `{id, site}` | `:75-82` |
+| `createEnergyModel(createModelInput)` | Mutation | Admin+ | Create a model/version |
+| `updateEnergyModel(updateModelInput)` | Mutation | Admin+ | Deep-merge update (blocks/predicted/learned) |
+| `deleteEnergyModel(input)` | Mutation | Admin+ | Delete by `{id, site}` |
+| `createPredictedModel(createPredictedModelInput)` | Mutation | Admin+ | Add one `predicted[]` entry |
+| `updatePredictedModel(updatePredictedModelInput)` | Mutation | Admin+ | Edit one `predicted[]` entry |
+| `deletePredictedModel(deletePredictedModelInput)` | Mutation | Admin+ | Remove one `predicted[]` entry |
+| `energyModelVersions(input)` | Query | `@AllRoles` | Version dropdown by site/type |
+| `siteModels(input)` | Query | `@AllRoles` | Flatten each model's `predicted[]` into rows |
+| `energyModel(energyModelInput)` | Query | `@AllRoles` | Single model by id/site/type |
+
+> **Removed:** the `updateSiteModel` mutation and its input. Editing a `predicted[]` entry now goes through the dedicated `createPredictedModel` / `updatePredictedModel` / `deletePredictedModel` mutations instead of a general-purpose edit — `denowatts-backend/src/sites/dto/energy-model-predicted-proxy.input.ts`.
 
 ### EnergyModelLearnedResolver — `denowatts-backend/src/sites/resolvers/energy-model-learned.resolver.ts` {dev}
 Legacy per-site learned snapshots in the standalone `learned` collection: `energyModelLearnedList` (`:16-21`), `createEnergyModelLearned` (`:23-29`), `updateEnergyModelLearned` (`:31-37`), `deleteEnergyModelLearned` (`:39-45`).
@@ -286,11 +292,16 @@ The raw PVsyst files themselves are uploaded to the denobox first: `POST ${BACKE
 
 ### EnergyModelService — `denowatts-backend/src/sites/services/energy-model.service.ts` {dev}
 Mostly CRUD + versioning, not physics.
-- `create` (`:35-65`) — on create with no `endDate`, closes the previous current model of the same type (`closeCurrentModel` `:376-385`) and current predicted (`closeCurrentPredicted` `:392-409`). This is how one "current" per type is maintained.
-- Reads/updates: `findModelVersionsBySite` (`:67-77`), `findSiteModels` (`:79-93`), `findOne` (`:146-151`), `update` (`:190-238`), `updateSiteModel` (`:95-144`), `delete` (`:359-370`).
+- `create` (`:43-79`) — validates the range and tilt, rejects sibling overlap, then closes the previous current model of the same type. This is how one "current" per type is maintained.
+- Reads: `findModelVersionsBySite` (`:80-97`), `findSiteModels` (`:98-113`), `findOne` (`:114-120`).
+- Writes: `update` (`:136-212`), `delete` (`:213-232`), and the dedicated predicted-entry trio `createPredictedModel` (`:327-393`), `updatePredictedModel` (`:394-491`), `deletePredictedModel` (`:492-526`).
+- **Versioning:** `closeCurrentModel` (`:237-248`) end-dates the prior open model of the same site+type to the day before the new `startDate`, taking an `excludeDocId` so an in-place update cannot close itself. `closeCurrentPredicted` (`:527-559`) does the same for sibling predicted entries of the same predicted `type`.
+- **Validation:** `assertValidDateRange` (`:260-269`) is the sole enforcement point for `EnergyModelPredicted` ranges (a decorator sees only the payload, never the stored other half); `assertValidTilt` (`:273-278`) enforces -90..90; `assertNoParentOverlap` (`:563-602`) and `assertNoPredictedOverlap` (`:605+`) reject overlapping ranges with human-readable messages naming the conflicting model and its range (`formatDateRange` renders an open end as "present").
+- **Update is dirty-gated.** `validateParentRangeIfDirty` only re-validates a range that actually differs from what is stored — the frontend resends untouched fields, and legacy rows already conflict, so validating unconditionally would block edits to pre-existing data (`:294+`).
 - Defensive normalization: `sanitizeDocument` (`:161-172`, drops pre-refactor flat blocks missing `info`, normalizes `postProcessing` so one bad row doesn't null the whole GraphQL field); `sanitizePredictedPostProcessing` (`:180-188`, moves array-valued `factor` into `factorMonthly`).
 - Deep-merge helpers for partial updates: `mergeBlocks` (`:248-266`), `mergeMonthly` (`:269-288`), `mergePostProcessing` (`:291-310`), `mergePredicted` (`:342-357`).
-- Access control: `assertSiteAccessById` (`:412-418`).
+- Access control: `assertSiteAccessById` (`:707-714`) loads the site and runs `assertSiteAccess(user, site)`.
+- **Index:** `energymodels_site_type_start_idx` on `{ site: 1, type: 1, startDate: -1 }` — every read is `{site}` or `{site, type}`, and `startDate` trails so `findModelVersionsBySite`'s descending sort is served by the index rather than an in-memory sort — `denowatts-backend/src/sites/schemas/energy-model.schema.ts:301-307`.
 
 ### EnergyModelLearnedService — `denowatts-backend/src/sites/services/energy-mode-learned.service.ts` {dev}
 Note the **misspelled filename** (`energy-mode-learned`). `find` (`:24-39`) queries the `learned` collection by `site` and `version = site.energyAccountingVersion || "1.0"`; `create` (`:41-73`) stamps `version` from the site and rejects duplicate site+version+date; `update` (`:75-98`), `delete` (`:101-116`).
@@ -313,7 +324,7 @@ Note the **misspelled filename** (`energy-mode-learned`). `find` (`:24-39`) quer
 
 MongoDB (Mongoose), dual-decorated as GraphQL.
 
-- **`EnergyModel`** — `denowatts-backend/src/sites/schemas/energy-model.schema.ts:168-247`. Per-site, `timestamps:true`, versioned via `startDate`/`endDate`. `type` = `ModelType` enum `OWNER | OPERATOR` (`:10-13`, stored as `OWNNER` in places). Holds `blocks[]` (`:210-219`), embedded `learned[]` (`:221-227`), `predicted[]` (`:229-235`), `shade` (`:237-243`, references total/irradiance/mismatch shade-profile files, `:39-62`).
+- **`EnergyModel`** — `denowatts-backend/src/sites/schemas/energy-model.schema.ts:168-247`. Per-site, `timestamps:true`, versioned via `startDate`/`endDate`. `type` = `ModelType` enum `OWNER | OPERATOR` (`:22-25`). Holds `blocks[]` (`:210-219`), embedded `learned[]` (`:221-227`), `predicted[]` (`:229-235`), `shade` (`:237-243`, references total/irradiance/mismatch shade-profile files, `:39-62`).
 - **`EnergyModelBlock` / `EnergyModelBlockInfo`** — `denowatts-backend/src/sites/schemas/energy-model-block.schema.ts:63-332`. Richest input surface: `acMaxOutput`, `dcCapacity`, `acNameplate`, `quantityOfModules`, `modulesPerString`, `rearSideMismatch/Shading/EffectiveFactor`, `stcDcOhmicLoss`, `stcAcOhmicLoss`, `ageDerateFactor`, `lightInducedDegradation`, `mismatch`, `moduleQualityLoss`, `otherLosses`, `staticLosses`, `azimuth` (0–360), `tilt` (0–90), `tracker`/`backtrack`/`maxAngle`/`groundCoverRatio`, `albedo` (0–1), `temperatureCoefficient`, `inverterEfficiency`, `bifacialityFactor` (0–100), `powerFactor`, `transformerLosses`. Nests `module` (`:19-39`) and `inverter` (`:41-61`).
 - **`EnergyModelPredicted`** — `denowatts-backend/src/sites/schemas/energy-model-predicted.schema.ts:143-208`. `type` = `PredictedModelType` `OPERATING | CAPACITY_TEST` (`:18-21`). `monthly[]` (`:54-98`): `insHorGlob`, `insPoaGlob`, `insPoaEff`, `nrgPredictedRaw`, `nrgLssPostProcessing`, `nrgPredicted`. `postProcessing[]` (`:100-141`): `metric`, `factor`/`factorMonthly[]`, `method` = `CONSTANT | LINEAR | QUADRATIC` (`:6-10`), `time` = `ALWAYS | DAY_ONLY | NIGHT_ONLY` (`:12-16`).
 - **`EnergyModelLearned`** (standalone collection `learned`) — `denowatts-backend/src/sites/schemas/energy-model-learned.schema.ts:87-109`, with `EnergyModelLearnedBlock` (`:7-85`) per-block learned losses: `soiling`, `vegetation`, `rearsideEffectiveFactor`, `stcDcOhmicLoss`, `openStrings`, `moduleIdentifiableFaults`, `moduleQualityLoss`, `ageDerateFactor`, `acMaxOutput`, `mismatch`, `lightInducedDegradation`, `stcAcOhmicLoss`, `otherLosses`, `systemicDcLoss`.
@@ -388,7 +399,7 @@ Post-processing response monthly fields (`PostProcessingModal.tsx:275-320`; `typ
 
 ## Gotchas {dev}
 
-- **`OWNNER` typo** — the Owner's `ModelType` enum value is misspelled (double-N); flagged in `ENERGY_MODEL.md:45-63`. Don't rename without a data migration.
+- **The `OWNNER` typo is gone.** `ModelType` is now `OWNER | OPERATOR` (previously `OWNNER` / `LEARNED`). Rows written before the rename may still hold the old values, so a read that filters on `type` should tolerate both until the data is backfilled. — `denowatts-backend/src/sites/schemas/energy-model.schema.ts:22-25`
 - **Two learned stores** — embedded `EnergyModel.learned[]` vs standalone `learned` collection; the standalone one is authoritative in practice.
 - **`monthlyEnergyModel` on Site is unused** — per `check-energy-models.tool.ts:29-36`. Don't rely on it.
 - **Capacity-test upload is destructive** — `uploadCapacityTest` deletes existing `sitepredicted` rows before inserting.

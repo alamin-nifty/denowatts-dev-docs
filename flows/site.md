@@ -121,7 +121,7 @@ A few automatic behaviors are worth knowing because they affect data:
 
 ## Entry points & routes {dev}
 
-Site detail hub at route `/site/:siteId?` — `denowatts-portal/src/router.tsx:127`. Reached from the portfolio map, the status list, or direct URL. The hub layout is `denowatts-portal/src/pages/dashboard/site/components/SiteTabsLayout.tsx`. The whole `/site/:siteId?` subtree is wrapped by `CompanyRequiredRoute` (`router.tsx:127-225`).
+Site detail hub at route `/site/:siteId?` — `denowatts-portal/src/router.tsx:127`. Reached from the portfolio map, the status list, or direct URL. The hub layout is `denowatts-portal/src/features/site/components/SiteTabsLayout.tsx`. The whole `/site/:siteId?` subtree is wrapped by `CompanyRequiredRoute` (`router.tsx:127-225`).
 
 ---
 

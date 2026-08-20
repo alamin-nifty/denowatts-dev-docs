@@ -181,17 +181,18 @@
     "name": "Energy Model",
     "route": "/site/:siteId/energy-model",
     "module": "EnergyModel",
-    "purpose": "The per-site energy model: the 'expected energy' yardstick behind EPI/BEPI. A Model tab (per-block capacity + loss coefficients for the Owner's/Expected and Operator's/Learned models) and a Simulation tab (12-month predicted tables, PVsyst 8760 ingest, and post-processing). Config is stored in the NestJS backend; the physics simulation runs in the external Matrix (Python) service.",
+    "purpose": "The per-site energy model: the 'expected energy' yardstick behind EPI/BEPI. A Model tab (per-block capacity + loss coefficients for the Owner's/Expected and Operator's/Learned models; ModelType is OWNER | OPERATOR) and a Simulation tab (12-month predicted tables, PVsyst 8760 ingest, and post-processing). Config is stored in the NestJS backend; the physics simulation runs in the external Matrix (Python) service.",
     "actions": [
       "Pick model type (Owner's/Expected vs Operator's/Learned) and version",
-      "Create, edit, delete a model version (auto-closes the previous current one)",
+      "Create, edit, delete a model version (auto-closes the previous current one by end-dating it the day before the new start date; overlapping ranges are rejected)",
       "Edit per-block capacity and loss coefficients (Blocks table)",
       "Edit learned loss factors (Learned table)",
       "Upload a PVsyst 8760 CSV to build the predicted curve",
       "Upload PVsyst shade-scene CSVs",
       "Edit the 12-month predicted table",
       "Post-process predicted energy (subtract losses, preview then save)",
-      "Configure capacity-test simulation models"
+      "Configure capacity-test simulation models",
+      "Add, edit, or remove an individual predicted-model entry (dedicated create/update/delete mutations)"
     ],
     "flow": "flows/energy-model.md"
   },
@@ -215,11 +216,16 @@
     "name": "Channels",
     "route": "/site/:siteId/channels",
     "module": "Site",
-    "purpose": "Configuration and status of all data channels including DENO, gateway, modem, Modbus, and OPC servers.",
+    "purpose": "Configuration and status of all data channels including DENO, gateway, modem, Modbus, and OPC servers. Also the control panel for the physical gateway: write config to Matrix, push network settings, update firmware, and reboot.",
     "actions": [
       "Configure channels",
       "View channel status",
-      "Edit channel settings"
+      "Edit channel settings",
+      "Write Deno / Modbus / OPC channel config to Matrix",
+      "Write gateway network settings (Write Network)",
+      "Write all gateway config except network (Write All)",
+      "Update gateway firmware",
+      "Reboot the gateway"
     ],
     "flow": "flows/channels.md"
   },
@@ -1036,10 +1042,11 @@
     "name": "Profile",
     "route": "/profile",
     "module": "Users",
-    "purpose": "The signed-in user's own profile: personal details plus their personal notification preferences. The preference record is created on first view (upsert) and currently holds a single switch for the daily status report email.",
+    "purpose": "The signed-in user's own profile: personal details plus their personal notification preferences. The preference record is created on first view (upsert) and holds a single switch for the daily status report email, alongside a Send Report Now button that emails the caller a copy immediately.",
     "actions": [
       "View and edit own profile details",
-      "Toggle the daily status report email preference"
+      "Toggle the daily status report email preference",
+      "Send the daily status report to yourself on demand"
     ],
     "flow": "flows/notification.md"
   }

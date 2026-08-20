@@ -2,8 +2,8 @@
 title: Channels
 owner: alamin-nifty
 status: draft
-version: 3
-updated_at: 2026-06-10
+version: 4
+updated_at: 2026-08-19
 ---
 
 # Channels
@@ -97,11 +97,11 @@ Sites without wired internet backhaul their data over cellular SIMs, managed thr
 ---
 
 ## Entry points {dev}
-- Channel configuration tab: `denowatts-portal/src/pages/dashboard/site/channel-configuration/ChannelConfigurationPage.tsx` — route `/site/:siteId/channels`
-- Channel map tab: `denowatts-portal/src/pages/dashboard/site/channel-map/ChannelMapPage.tsx` — route `/site/:siteId/channel-map`
-- Channel status: `denowatts-portal/src/pages/dashboard/status/channel-status/ChannelStatusPage.tsx` — route `/status/channel`
-- Modbus Template settings: `denowatts-portal/src/pages/dashboard/settings/modbus-template/ModbusTemplatePage.tsx`
-- Cell Modem Management (SuperAdmin): `denowatts-portal/src/pages/dashboard/settings/cell-modem-management/CellModemManagementPage.tsx`
+- Channel configuration tab: `denowatts-portal/src/features/site/channel-configuration/ChannelConfigurationPage.tsx` — route `/site/:siteId/channels`
+- Channel map tab: `denowatts-portal/src/features/site/channel-map/ChannelMapPage.tsx` — route `/site/:siteId/channel-map`
+- Channel status: `denowatts-portal/src/features/status/channel-status/ChannelStatusPage.tsx` — route `/status/channel`
+- Modbus Template settings: `denowatts-portal/src/features/settings/modbus-template/ModbusTemplatePage.tsx`
+- Cell Modem Management (SuperAdmin): `denowatts-portal/src/features/settings/cell-modem-management/CellModemManagementPage.tsx`
 
 ---
 
@@ -234,6 +234,61 @@ Returns a grouped list of all manufacturers with their associated model names. R
 Returns all non-deleted sites that use a given template, with usage counts. Restricted to `SUPER_ADMIN`.
 - **Returns** (`TemplateSites`): `templateId`, `templateName`, `site`, `siteName`, `templateUsageCount: Number`
 - Resolver: `denowatts-backend/src/channels/resolvers/modbus-template.resolver.ts:85`
+
+---
+
+---
+
+## Gateway operations & Matrix config writes {dev}
+
+A block of operations added in this release lets the portal drive a physical gateway from the
+Channel Configuration page. All of them are **thin proxies to the external Matrix (Python) service**
+under `config_generator/*` — the backend authenticates with `PYTHON_SERVER_SECRET`, forwards a
+snake_case body, and normalizes the reply. Endpoint constants: `denowatts-backend/src/common/constants/apis.ts:18-24`.
+
+### Query
+
+#### `getZones(input: GetZonesInput!): ZonesResponse`
+Which zones Matrix holds data for over a site + channel set and date range (`POST {MATRIX_API_URL}/data/zones`) — `denowatts-backend/src/channels/resolvers/channels.resolver.ts:109-112`, service `denowatts-backend/src/channels/services/channels.service.ts:1270-1296`.
+- **Input** (`denowatts-backend/src/channels/dto/zones.input.ts`): `site: ID!` (`@IsMongoId`), `channels: [String!]!`, `start: String!`, `end: String!` (both `@IsDateString`), optional `interval`.
+- The raw Matrix reply is passed through `normalizeZonesResponse` before returning, so a malformed payload degrades to empty arrays instead of throwing.
+
+### Gateway mutations
+
+| Mutation | Matrix endpoint | Input | Purpose |
+|---|---|---|---|
+| `writeDenoChannelConfig` | `config_generator/write_deno_channel_config` | `{ siteId, serialNumber? }` | Write one Deno channel's config |
+| `writeModbusChannelConfig` | `config_generator/write_modbus_channel_config` | `{ siteId }` | Write a site's Modbus channel config |
+| `writeOpcChannelConfig` | `config_generator/write_opc_channel_config` | `{ siteId }` | Write a site's OPC channel config |
+| `writeGatewayNetwork` | `config_generator/write_gateway_network` | `{ serialNumber?, ipAddress?, dhcp?, gateway?, netmask?, dns1?, dns2? }` | Network settings only — backs the Gateway panel's **Write Network** button |
+| `writeGatewayNetworkConfig` | `config_generator/write_gateway_network` | same | **Superseded** by `writeGatewayNetwork`; hits the same endpoint |
+| `writeAllGatewaySingleConfig` | `config_generator/write_all_gateway_single` | `{ serialNumber }` | Everything *except* network settings (site config, timezone, preamble) — backs the **Write All** button |
+| `updateGatewayFirmware` | `config_generator/update_gateway_firmware` | `{ serialNumber }` | Start a firmware update |
+| `rebootGateway` | `config_generator/reboot_gateway` | `{ serialNumber }` | Reboot the gateway |
+| `updateSocketXpDevice` | SocketXP API | `{ deviceId, customerSite }` | Keep the SocketXP device's `CustomerSite` label in sync with the gateway's site/channel name; `@AllRoles()` |
+
+Resolver: `denowatts-backend/src/channels/resolvers/channels.resolver.ts:114-199`. Services: `denowatts-backend/src/channels/services/channels.service.ts:1484-1610`.
+
+**Frontend:** `denowatts-portal/src/features/site/channel-configuration/components/Gateway.tsx` (Write Network, Write All, firmware, reboot) and `denowatts-portal/src/features/site/channel-configuration/ChannelConfigurationPage.tsx:173,760`.
+
+### Rules worth knowing
+
+- **`serialNumber` is optional on `WriteDenoChannelConfigInput`.** Only `siteId` is required, so a call can write the site's Deno config without naming a specific unit — `denowatts-backend/src/channels/dto/write-channel-config.input.ts:5-15`.
+- **Write All uses a 4-minute timeout** — the operation genuinely takes minutes — `denowatts-backend/src/channels/services/channels.service.ts:1592`.
+- **Success is inferred from the HTTP status, not the body.** Matrix returns only `{ message: "success" }` on the 2xx path with no `success` field, so a resolved promise *is* the success signal — `denowatts-backend/src/channels/services/channels.service.ts:1595-1597`.
+- **Every gateway action is audited.** `recordGatewayAction` writes `gateway.config_written`, and failures record `gateway.config_write_failed`. See [[audit-trail]].
+- **Axios errors are translated, not leaked.** Every one of these methods funnels through `httpExceptionFromAxiosError(error, fallback)`, so a Matrix 4xx/5xx surfaces as a proper HTTP exception with a human fallback message instead of an opaque 500 — `denowatts-backend/src/common/utils/error.ts:46`.
+
+---
+
+## Gateway-reporting mismatch detection {dev}
+
+Two fields added to `Channel` support catching a channel that is physically reporting to the wrong gateway:
+
+- **`lastReportedTo`** (String, optional) — which gateway last received data from this channel, stored as `"<prefix>-<serialNumber>"`, e.g. `"E81A58-008DBC"`.
+- **`isReportingToWrongGateway`** (Boolean, **computed at read time**, not persisted) — set during the channel list aggregation — `denowatts-backend/src/channels/services/channels.service.ts:722-735`.
+
+The comparison: only the segment **after the last `-`** of `lastReportedTo` is the serial number. It is compared case-insensitively against the expected gateway's `config.serialNumber`. The field is `null` — meaning *unknown*, not *fine* — whenever the channel's source is not a gateway reference, or either serial number is missing. A UI showing this must distinguish `null` from `false`.
 
 ---
 
@@ -484,7 +539,8 @@ Returns `[{ templateId, templateName, site, siteName, templateUsageCount }]`.
 | `images` | ChannelImages | No | — | Object of 20 named photo slots, values are stored as S3 keys (resolved to URLs on read) |
 | `notes` | String | No | — | |
 | `keyMetric` | Float | No | — | Latest value of the key metric for this channel |
-| `writeConfigMessages` | String | No | — | |
+| `lastWriteConfigResponse` | String | No | — | The last gateway write-config response. **Renamed from `writeConfigMessages`** by migration `migrations/20260813160500-rename-channel-write-config-messages.js` |
+| `lastReportedTo` | String | No | — | Gateway that last received this channel's data, as `"<prefix>-<serial>"` |
 | `lastConnectedAt` | Date | No | — | |
 
 **MongoDB indexes on `channels` collection:**
@@ -765,6 +821,10 @@ Partial pick of `_id, name, manufacturer, model, prefix`.
 
 - **`siteMap` nulling is per-site, not per-channel**: `configChannelSiteMap` issues a global `updateMany({ site: input.site, _id: { $nin: mappedObjectIds } }, { siteMap: null })`. Any channel for that site not in the flow graph loses its siteMap, even if it had a valid one manually assigned. — `channels.service.ts:1086`
 
+- **`isReportingToWrongGateway` is tri-state.** `null` means "cannot tell" (non-gateway source, or a missing serial on either side) — it does **not** mean the channel is fine. — `denowatts-backend/src/channels/services/channels.service.ts:730-735`
+- **The `writeConfigMessages` → `lastWriteConfigResponse` rename is re-runnable.** The migration only touches documents still carrying the old field, so it is safe to re-run after old app instances drain; a lingering old instance simply re-creates the old field, which a re-run renames again. `$rename` overwrites the target when a document has both — acceptable, since the freshly stamped old field is the newer one. — `denowatts-backend/migrations/20260813160500-rename-channel-write-config-messages.js`
+- **`writeGatewayNetworkConfig` and `writeGatewayNetwork` hit the same Matrix endpoint.** The former is superseded; the portal calls `writeGatewayNetwork`. — `denowatts-backend/src/channels/services/channels.service.ts:1484,1531`
+- **New index `channels_site_idx` on `{ site: 1 }`.** `site` is the primary access path (list aggregation, asset lookups, site-builder `updateMany`) but indexes previously covered only serial numbers. — `denowatts-backend/src/channels/schemas/channel.schema.ts:308-315`
 - **OPC tags are a separate collection**: The `opctags` collection is distinct from channels. OPC channels reference tags by name (`opcTagName` in `OPCChannelMetric`), not by ObjectId. The `opcTags` query is used to browse available tags when configuring an OPC channel metric. — `opc-tag.schema.ts`
 
 ---

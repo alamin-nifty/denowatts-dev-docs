@@ -78,8 +78,8 @@ This platform **stores and displays** the rules — it does not run them. The ac
 ---
 
 ## Entry points {dev}
-- **Authoring UI** — Settings gear → "Global Alarm Configuration" — `denowatts-portal/src/pages/dashboard/settings/global-alarm/GlobalAlarmPage.tsx` at route `/settings/global-alarm-configuration` (registered in `denowatts-portal/src/router.tsx:458-464`).
-- **Consumer UI (status dashboard)** — Portfolio page open-alarm summary table — `denowatts-portal/src/pages/dashboard/portfolio/components/OpenAlarmStatusSummaryTable.tsx` (fed by the `alarmStatusSummary` query inside `PORTFOLIO_PAGE_DATA`, `denowatts-portal/src/graphql/queries/portfolioQueries.ts`).
+- **Authoring UI** — Settings gear → "Global Alarm Configuration" — `denowatts-portal/src/features/settings/global-alarm/GlobalAlarmPage.tsx` at route `/settings/global-alarm-configuration` (registered in `denowatts-portal/src/router.tsx:458-464`).
+- **Consumer UI (status dashboard)** — Portfolio page open-alarm summary table — `denowatts-portal/src/features/portfolio/components/OpenAlarmStatusSummaryTable.tsx` (fed by the `alarmStatusSummary` query inside `PORTFOLIO_PAGE_DATA`, `denowatts-portal/src/graphql/queries/portfolioQueries.ts`).
 
 ---
 
@@ -171,7 +171,7 @@ All operations are defined in `denowatts-backend/src/alarm-config/alarm-config.r
 
 ### Frontend operation documents
 - Queries: `denowatts-portal/src/graphql/queries/alarmConfigQueries.ts` — `AlarmConfig($id)` (`GET_ALARM_CONFIG`), `AlarmConfigs` (`GET_ALARM_CONFIGS`).
-- Mutations: `denowatts-portal/src/graphql/mutations/alarmConfigMutations.ts` — `CreateAlarmConfig`, `UpdateAlarmConfig`, `UpdateBulkAlarmConfig` (`bulkUpdateAlarmConfig`), `DeleteAlarmConfig`.
+- Mutations: `denowatts-portal/src/features/settings/api/alarmConfigMutations.ts` — `CreateAlarmConfig`, `UpdateAlarmConfig`, `UpdateBulkAlarmConfig` (`bulkUpdateAlarmConfig`), `DeleteAlarmConfig`.
 - `alarmStatusSummary` is queried only inside `PORTFOLIO_PAGE_DATA` and a standalone `AlarmStatusSummary` doc in `denowatts-portal/src/graphql/queries/portfolioQueries.ts`.
 
 ---

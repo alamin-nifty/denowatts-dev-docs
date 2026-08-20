@@ -2,8 +2,8 @@
 title: System Logs (developer audit log)
 owner: alamin-nifty
 status: draft
-version: 1
-updated_at: 2026-08-11
+version: 2
+updated_at: 2026-08-19
 ---
 
 # System Logs (developer audit log)
@@ -139,6 +139,12 @@ Registered fleet-wide as a **connection plugin** at bootstrap, so it applies to 
 | — | `deleteOne`, `findOneAndDelete` → `DELETE` |
 
 > **The before-snapshot is stashed per-operation, not in shared static state.** Document hooks use `$locals`; query hooks use a symbol on the Mongoose `Query` object (`SYSTEM_LOG_QUERY_STATE`). The comment records why: shared static state **raced across concurrent requests** — `denowatts-backend/src/system-logs/events/system-log.events.ts:107-112`, `denowatts-backend/src/system-logs/system-logs.service.ts:521-525`.
+
+The shapes these hooks read are declared in `denowatts-backend/src/system-logs/types/system-log.types.ts` — deliberately structural rather than importing Express/Nest types, so the capture layer stays decoupled from the transport:
+- `SystemLogRequest` — the express/GraphQL request fields actually read (`body`, `user`, `method`, `url`/`originalUrl`, `ip`, `headers`, `socket.remoteAddress`), plus the `SYSTEM_LOG_CONTEXT` slot the interceptor stashes prepared context into.
+- `SystemLogQuery` — a Mongoose `Query` widened with the `SYSTEM_LOG_QUERY_STATE` symbol holding that operation's before-snapshot.
+- `SystemLogHookDocument` — a hydrated document widened with the `collection.name`, `target` and `_id` the post-save hook reads.
+- `SystemLogPaginateQuery` / `SystemLogCreatedAtRange` — the filter `paginateSystemLogs` assembles, including the `createdAt` `$gte`/`$lte` window.
 
 Because the plugin runs outside Nest's DI container, the service exposes a **static bridge** (`SystemLogService.eventEmitter`) set once in the constructor, so the hooks can reach the emitter — `:208-231`.
 

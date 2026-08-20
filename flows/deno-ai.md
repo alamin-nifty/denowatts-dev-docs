@@ -2,8 +2,8 @@
 title: DenoAI (in-portal AI assistant)
 owner: alamin-nifty
 status: draft
-version: 1
-updated_at: 2026-08-11
+version: 2
+updated_at: 2026-08-19
 ---
 
 # DenoAI (in-portal AI assistant)
@@ -131,6 +131,15 @@ The controller is decorated `@Public()` to bypass the **GraphQL-context** global
 
 SSE plumbing sets `text/event-stream`, `no-cache, no-transform`, `keep-alive` and `X-Accel-Buffering: no`, and aborts the run when the client disconnects (`res.on("close")` → `AbortController.abort()`) — `denowatts-backend/src/deno-ai/deno-ai.controller.ts:79-106`.
 
+**Rate limiting is per user, on its own isolated throttler.** The controller also applies `DenoAiThrottlerGuard` — `denowatts-backend/src/deno-ai/guards/deno-ai-throttler.guard.ts`. It subclasses Nest's `ThrottlerGuard` but is injected with DenoAI's **private** options and storage tokens (`DENO_AI_THROTTLER_OPTIONS`, `DENO_AI_THROTTLER_STORAGE`), because `ThrottlerModule` is `@Global()` and a second registration would clobber the first module's providers. `getTracker` buckets by authenticated user id — all of a user's SSE traffic shares one path, so an IP or path bucket would be useless — falling back to a normalized IP, then `"anonymous"`. Wiring: `denowatts-backend/src/deno-ai/deno-ai.module.ts:96-104`.
+
+**Request bodies are validated, not trusted** — `denowatts-backend/src/deno-ai/dto/chat-request.dto.ts`:
+- `ChatRequestDto` — `message` (required, ≤ 4000 chars), `conversationId?` (`@IsMongoId`), `pageContext?` (nested-validated). `currentSiteId` / `currentSiteName` are **deprecated**, kept only for older clients that predate `pageContext`.
+- `PageContextDto` — every field optional and length-capped (`pageLabel` ≤ 120, `path` ≤ 200, `siteName` ≤ 200, `view` ≤ 200, `filters` ≤ 400, dates ≤ 40); `siteId` must be a Mongo id. These caps bound what a client can inject into the prompt.
+- `ResumeChatDto` — `actionId` (`@IsMongoId`) + `confirm` (boolean).
+
+**`@CurrentUser()` does not work here.** The standard decorator reads `req` from the GraphQL context and returns `undefined` on a REST controller, so these endpoints use `@RestCurrentUser()`, which reads the user `DenoAiJwtGuard` populated on the HTTP request — `denowatts-backend/src/deno-ai/decorators/rest-current-user.decorator.ts`.
+
 ### GraphQL — `denowatts-backend/src/deno-ai/deno-ai.resolver.ts`
 
 ```graphql
@@ -213,6 +222,40 @@ All paths above are under `denowatts-backend/src/deno-ai/`.
 
 **`navigate` is pure route knowledge.** Site-specific destinations require a valid `siteId` (already access-scoped via `search_sites`); the tool validates the ObjectId and refuses otherwise — `denowatts-backend/src/deno-ai/tools/navigate.tool.ts:27-32`.
 
+**Relative dates are resolved deterministically, not by the model.** `DateResolver.resolve(phrase, tz)` turns "last 7 days", "3 days ago", "yesterday", "this/last week", "this/last month" into UTC `Date` boundaries computed **in the site's timezone**, and returns `{}` for anything it does not recognise rather than guessing — `denowatts-backend/src/deno-ai/tools/date-resolver.ts`. An invalid timezone silently falls back to UTC (`safeZone`).
+
+---
+
+## DQMS engines {dev}
+
+The two audit tools are thin wrappers. The analysis lives in two read-only service layers under `denowatts-backend/src/deno-ai/`, both tenant-scoped by the calling tool rather than by themselves.
+
+### Data Ingest Checker — `data-ingest/`
+
+`DataIngestService.analyzeSite(...)` (~1,040 lines) — `data-ingest/data-ingest.service.ts`. One aggregation per channel produces total stats plus hourly buckets with per-metric min/max/avg, riding the `{metadata.site, metadata.channel, timestamp}` index. Around that it layers:
+
+- **Metric-path discovery** — numeric paths are extracted from a sample `channelraws` document, recursing into nested objects (`zone.Zone1.*`) and skipping metadata/ids/dates, so the checker adapts to whatever a channel actually reports.
+- **Local-hour → UTC mapping** using the site timezone, so daylight-window checks mean the same thing at every longitude.
+- **A future-timestamp sanity check** across the whole site (a cheap indexed query).
+- **Config/template checks** over the channel set; API-sourced channels are detected by `configType`/`source` being `API` and treated differently.
+- **Recent configuration changes** pulled from the `systemlogs` audit trail — anything touching the site, its channels, or their Modbus templates within the window plus a lookback, via the `{documentId, createdAt}` index. See [[system-logs]].
+
+`data-ingest/data-ingest-reconcile.ts` handles **raw-vs-rollup reconciliation**. Its stated premise matters: `channelrollups` are the corrected source of truth, so divergences are *characterized rather than flagged*, and verdicts come from aggregate agreement across the range rather than from any single bucket. `inferGranularityMinutes(rollups)` derives the rollup cadence; `reconcileChannel(input)` produces the per-channel verdict; `relDiff(a, b)` is the shared relative-difference helper.
+
+`data-ingest/metric-labels.ts` is a **process-global** label map — metric definitions are not site-specific, so `DataIngestService` populates it once per process and it refreshes only on restart. `metricLabel(path)` renders "AC Power", keeping the prefix on nested paths for disambiguation ("DC Current (zone.11)") and falling back to the raw path when unknown.
+
+### Benchmark Checker — `benchmark/`
+
+`BenchmarkService.analyzeSite(...)` (~886 lines) — `benchmark/benchmark.service.ts`. Grades data acquisition and benchmark/model alignment A/B/C with sub-scores. The parts worth knowing:
+
+- **The site blocks *are* the energy model** — capacity, geometry, loss parameterization, hardware specs — summarized per block for both the checks and the report. See [[energy-model]].
+- **The `energymodels` registry has two layers:** `OWNER` is the filed expectation (pro-forma + design blocks); `OPERATOR` is the learned, date-versioned layer. A null `endDate` marks the current version.
+- **Metered production** is hourly average AC power per revenue meter (`5.2.*`) integrated to energy, with reclosers and BESS meters excluded and hierarchies resolved to the billing tier.
+- **Tracker arbitration:** hourly mean absolute tracking angle from the site's tracker controller channels adjudicates Deno-vs-model max-angle exceedances — a *stable* offset indicates sensor mounting bias rather than a model error.
+- **Portal-accurate site series** come from `siterollups` — shade/snow-adjusted expected, and produced with the meter → `pwrNet` → inverter fallback applied, as hourly averages (kW ≈ kWh per hour).
+- **Calibration dates** are read from the `assets` collection (present on roughly half the Deno fleet), mapping serial → latest calibration date. See [[assets]].
+
+
 ---
 
 ## Human-in-the-loop write flow {dev}
@@ -291,7 +334,7 @@ Parsed and validated once at boot — `denowatts-backend/src/deno-ai/services/de
 
 Parsing is defensive: booleans accept `1/true/yes/on` and `0/false/no/off`; integers must be ≥ 1 or the default is used, so a NaN/zero/negative env value can never propagate — `:5-20`. Setting `OPENAI_BASE_URL` without `DENO_AI_EMBED_MODEL` logs a targeted warning about Azure embeddings deployments — `:54-60`.
 
-Fixed code-level constants (not env-tunable): rate limit 20/60s, `MAX_EVENT_RESULTS` 20, `MAX_SITE_RESULTS` 8, `HISTORY_MESSAGES` 10, and the docs tuning values (`DOCS_SEARCH_RESULTS` 5, `DOCS_MIN_SCORE` 0.25, `DOCS_MIN_SCORE_RATIO` 0.7, `DOCS_KEYWORD_BOOST` 0.1, `DOCS_PAGE_CAP` 2, `DOCS_FETCH_RETRIES` 3, `DOCS_REFRESH_HOURS` 24, `DOCS_MAX_CHUNK_CHARS` 2000) — `denowatts-backend/src/deno-ai/deno-ai.constants.ts:35-72`.
+Fixed code-level constants (not env-tunable): rate limit `RATE_LIMIT` 20 per `RATE_TTL_MS` 60s **per user** (see the throttler note under *API surface*; in a clustered deploy the in-memory effective limit is `limit × workers`), `MAX_EVENT_RESULTS` 20, `MAX_SITE_RESULTS` 8, `HISTORY_MESSAGES` 10, and the docs tuning values (`DOCS_SEARCH_RESULTS` 5, `DOCS_MIN_SCORE` 0.25, `DOCS_MIN_SCORE_RATIO` 0.7, `DOCS_KEYWORD_BOOST` 0.1, `DOCS_PAGE_CAP` 2, `DOCS_FETCH_RETRIES` 3, `DOCS_REFRESH_HOURS` 24, `DOCS_MAX_CHUNK_CHARS` 2000) — `denowatts-backend/src/deno-ai/deno-ai.constants.ts:35-72`.
 
 ---
 

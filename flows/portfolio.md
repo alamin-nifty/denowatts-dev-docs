@@ -125,7 +125,7 @@ If your account has no company assigned, the portfolio shows an **empty** fleet 
 
 ## GraphQL API surface {dev}
 
-The portfolio landing page issues **one batched query**, `PortfolioPageData`, that bundles three independent server-side resolvers (`sites`, `portfolioStatusSummary`, `alarmStatusSummary`) into a single network round trip with `fetchPolicy: 'no-cache'` — `denowatts-portal/src/graphql/queries/portfolioQueries.ts:49-90`, `denowatts-portal/src/pages/dashboard/portfolio/PortfolioPage.tsx:42-49`.
+The portfolio landing page issues **one batched query**, `PortfolioPageData`, that bundles three independent server-side resolvers (`sites`, `portfolioStatusSummary`, `alarmStatusSummary`) into a single network round trip with `fetchPolicy: 'no-cache'` — `denowatts-portal/src/graphql/queries/portfolioQueries.ts:49-90`, `denowatts-portal/src/features/portfolio/PortfolioPage.tsx:42-49`.
 
 ### Queries {dev}
 
@@ -170,7 +170,7 @@ Shared Tailwind class constants and the `GOOGLE_MAPS_DARK_STYLES` array for dark
 **Static image placeholders.** Each renders one `<img>` pointing at an external S3 (`dropovercl.s3.amazonaws.com`) screenshot — no query, no Redux, no charting (`:1-13` each). As written they **fetch nothing**. Real fleet charting lives in [[analytics]].
 
 ### PortfolioStatusView / `/status/portfolio` — outside this folder {dev}
-The detailed list the summary links to lives at `denowatts-portal/src/pages/dashboard/status/portfolio-status/PortfolioStatusPage.tsx` (route `router.tsx:235-236`). UNCLEAR: its exact query/poll interval not re-read this pass; an earlier draft claimed `GET_SITES` with `showNotes: true` + `pollInterval: 60000` — verify before relying. See [[status]].
+The detailed list the summary links to lives at `denowatts-portal/src/features/status/portfolio-status/PortfolioStatusPage.tsx` (route `router.tsx:235-236`). UNCLEAR: its exact query/poll interval not re-read this pass; an earlier draft claimed `GET_SITES` with `showNotes: true` + `pollInterval: 60000` — verify before relying. See [[status]].
 
 ---
 
