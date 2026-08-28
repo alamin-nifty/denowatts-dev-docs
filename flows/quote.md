@@ -34,7 +34,7 @@ flowchart TD
     SIGNED --> NEXT["Feeds handover<br/>and future renewals"]
 ```
 
-Statuses only ever move forward; the e-signature step happens in an external signing service, outside the platform.
+Statuses only ever move forward. The signing document is built by the platform and signed through an external provider, but the ceremony is **embedded in the portal** and completion is reported back by the customer's browser — see [[e-signature]].
 
 ---
 
@@ -44,9 +44,9 @@ A quote moves forward through fixed stages and never backwards:
 
 1. **Pending** — created and awaiting admin review (customers see this as "Quote in Review").
 2. **Requested for signing** — approved; the owner is emailed and can open the e-signature flow ("Waiting for Signing").
-3. **Signed** — the e-signature is complete ("Awaiting Order" until billing details arrive).
+3. **Signed** — the e-signature is complete ("Awaiting Order" until billing details arrive). This step also **creates the Company and the Site** when the quote was for a customer or installation the platform did not already know about, files the signed PDF into the site's Denobox, and emails both signer and owner — see [[e-signature]].
 4. **Ordered** — billing and shipping details are confirmed; an invoice is raised in the accounting system and a confirmation email goes out.
-5. **Shipped** — hardware is on its way. For a brand-new site, this is the moment the monitoring subscription is switched on (start date today, end date after the subscribed years).
+5. **Shipped** — hardware is on its way. For a brand-new site, this is the moment the monitoring subscription is switched on (start date today; end date is the quote's agreed renewal date when one was set, otherwise today plus the subscribed years).
 
 A quote can also be **withdrawn** (the one status change a customer can make themselves) or **deleted** (soft-delete, super-admin only — the record is kept but hidden). Quotes effectively expire 90 days after their last update; the expiry date shown in the UI is computed, not stored.
 
@@ -88,6 +88,8 @@ A quote can also be **withdrawn** (the one status change a customer can make the
 - **Status moves forward only** — a signed quote can never go back to pending. (The single sanctioned exception: an order can be reverted from shipped back to ordered for a not-yet-existing site.)
 - **Ordering requires a signed quote** — the invoice is only raised once the signature exists.
 - **Shipping activates the subscription** for new sites — plan start/end dates are written onto the site, including all sites of a group quote at once.
+- **An agreed renewal date wins over the term length.** If the quote carries a `nextRenewalDate`, that date (end of day) becomes the plan's end date; the `today + initialSubscriptionYears` calculation is only the fallback for quotes without one. This keeps a renewal aligned to the date the customer actually signed up to rather than silently extending the term from the ship date — `denowatts-backend/src/quote/quote.service.ts:452-457`.
+- **An older HubSpot-based quote/order path still exists in the codebase but is not used** — see [[hubspot-crm-legacy]]. The order route's `$dealId` parameter is legacy naming; it carries a quote id.
 - **Bulk creation is all-or-nothing** — if any row fails validation, nothing is created.
 - **Deleted quotes are hidden, not erased**, and excluded from all lists by default.
 - **Group children never appear in the quote list** — they are reached through their group parent.
@@ -422,8 +424,8 @@ Returns: `{ products, hardwareSubtotal, initialRecurringPeriodSubtotal, initialO
 7. **Status-transition side effects:**
    - PENDING → REQUESTED_FOR_SIGNING: Send "approved for signing" email to owner.
    - PENDING → WITHDRAWN (or any → WITHDRAWN): Send "quote withdrawn" email to owner.
-   - Not-existing-site AND any → SHIPPED: Call `sitesService.update` to set `serviceStatus = SHIPPED` and activate subscriptions (`plan.startDate = today`, `plan.endDate = today + initialSubscriptionYears years`, `capacityTest` if `epcAndCapacityTest`).
-   - `isGroup` AND any → SHIPPED: Same subscription activation for ALL child quotes' sites.
+   - Not-existing-site AND any → SHIPPED: Call `sitesService.update` to set `serviceStatus = SHIPPED` and activate subscriptions (`plan.startDate = today`, `plan.endDate = quote.nextRenewalDate ? endOf(day, nextRenewalDate) : today + initialSubscriptionYears years`, `capacityTest` if `epcAndCapacityTest`) — `denowatts-backend/src/quote/quote.service.ts:452-457`.
+   - `isGroup` AND any → SHIPPED: Same subscription activation for ALL child quotes' sites, each using its **own** child quote's `nextRenewalDate` before falling back to its term length — `denowatts-backend/src/quote/quote.service.ts:511-521`.
    - Not-existing-site AND SHIPPED → ORDERED (revert): Call `sitesService.update` to set `serviceStatus = ORDERED` and clear subscriptions. (Note: This handles an edge case where an order is placed before shipment is confirmed.)
 
 ---
@@ -514,7 +516,7 @@ For each document URL in the input array, calls `storageService.moveFile(quoteId
 3. Call `docuSealService.createSubmission({ submissionId: quote.dsEnvelopeId, quoteId, referenceId, submitter: { email, name, role: 'signer' } })` to create or resume a DocuSeal submission.
 4. Store returned `submissionId` → `dsEnvelopeId` and `signingUrl` → `dsSigningUrl` on the quote; save.
 5. Copy any `orderDocuments` to `denobox/{quote.site}/Plans/` (fire-and-forget).
-6. Return the quote (status remains `REQUESTED_FOR_SIGNING` at this point — DocuSeal webhook presumably updates it to `SIGNED`).
+6. Return the quote — status stays `REQUESTED_FOR_SIGNING`. The move to `SIGNED` happens later, when the customer's browser reports the completed signature to `POST /api/docuseal/signing/completed`. See [[e-signature]].
 
 ---
 
@@ -888,7 +890,7 @@ Route: `/settings/quote-management` — `QuoteManagementPage.tsx`.
 - **Group quote financial totals vs. child products.** When displaying a group quote, `getQuoteById` merges all child products into the parent's `products` array purely for display. The stored `products: []` on the parent is empty. Financial totals on the parent ARE populated (sum of all children). — `quote.service.ts:693–711`
 - **Bulk create fails entirely on any error.** A single invalid site name or QB product miss aborts the whole batch. The UI should show per-row validation before submitting. — `quote.service.ts:800–803`
 - **Renewal `siteModuleType` is always Monofacial.** The renewal product recommendation engine does not detect bifacial panels from channels; it hardcodes `[Monofacial]`. Operators must manually adjust if bifacial sensors are present. — `quote.service.ts:1516`
-- **DocuSeal webhook for SIGNED status.** `processQuoteForSigning` leaves the quote in `REQUESTED_FOR_SIGNING`. The transition to `SIGNED` and the writing of `dsSignImage` / `signedAt` presumably happens via a DocuSeal webhook (not visible in this module). This is a gap in documented flow — flag for human review.
+- **The `SIGNED` transition is browser-driven, not a webhook.** `processQuoteForSigning` leaves the quote in `REQUESTED_FOR_SIGNING`. It becomes `SIGNED` only when the portal posts the completed signature to `POST /api/docuseal/signing/completed` (`denowatts-backend/src/shared/docuseal/docuseal.controller.ts:17-33`), which is behind the global `JwtAuthGuard` and so **cannot be called by the signing provider**. That same call also writes `dsSignImage` / `signedAt` and auto-creates the Company and Site when they do not yet exist. If the signer closes the tab before it fires, the quote stays in `REQUESTED_FOR_SIGNING` with nothing to reconcile it. Full detail in [[e-signature]].
 - **S3 image lookup strips suffix after `-`.** Product images are stored without the AC-size suffix (e.g., image for `100802-25` is looked up as `100802`). The `normalizeSku` function does this stripping. — `quote.service.ts:1229–1231`
 - **Order-document copy is fire-and-forget.** Both `quoteOrder` and `processQuoteForSigning` copy order documents to the site's Denobox Plans folder asynchronously without awaiting, so errors are silent (no Sentry capture for document copy failures). — `quote.service.ts:970–983`, `1104–1109`
 - **Renewal group parent site is null.** Group quotes have `site: null`. Only the child quotes have `site` populated. Code must handle this when reading the group. — `quote.service.ts:1578`
@@ -917,4 +919,4 @@ For the full domain vocabulary, see [[solar-glossary]].
 
 ---
 
-**Related flows:** [[settings]] · [[site]] · [[channels]] · [[storage]] · [[companies]] · [[authentication]] · [[solar-glossary]]
+**Related flows:** [[e-signature]] · [[settings]] · [[site]] · [[channels]] · [[storage]] · [[companies]] · [[authentication]] · [[solar-glossary]] · [[email]] · [[hubspot-crm-legacy]]

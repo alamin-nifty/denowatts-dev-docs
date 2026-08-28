@@ -627,4 +627,4 @@ For the full domain vocabulary, see [[solar-glossary]].
 
 ---
 
-**Related flows:** [[authentication]] · [[site]] · [[analytics]] · [[settings]] · [[notification]] · [[alarm-config]] · [[webhooks]] · [[solar-glossary]]
+**Related flows:** [[authentication]] · [[site]] · [[analytics]] · [[settings]] · [[notification]] · [[alarm-config]] · [[webhooks]] · [[solar-glossary]] · [[email]]

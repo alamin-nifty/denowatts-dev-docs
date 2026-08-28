@@ -401,6 +401,7 @@ Post-processing response monthly fields (`PostProcessingModal.tsx:275-320`; `typ
 
 - **The `OWNNER` typo is gone.** `ModelType` is now `OWNER | OPERATOR` (previously `OWNNER` / `LEARNED`). Rows written before the rename may still hold the old values, so a read that filters on `type` should tolerate both until the data is backfilled. — `denowatts-backend/src/sites/schemas/energy-model.schema.ts:22-25`
 - **Two learned stores** — embedded `EnergyModel.learned[]` vs standalone `learned` collection; the standalone one is authoritative in practice.
+- **Block geometry lives in two places, and `sites.blocks` is now the deprecated one.** The DQMS Benchmark Checker reads block geometry from the site's current `OWNER` energy-model document and only falls back to `sites.blocks` when there is no owner model (or it carries no blocks) — `resolveGeometryBlocks` in `denowatts-backend/src/deno-ai/benchmark/benchmark.service.ts:117-124`. It correspondingly **dropped** its old check that compared the two against each other for drift. Anything still reading `sites.blocks` directly is reading the stale copy for sites that have an owner model. See [[deno-ai]].
 - **`monthlyEnergyModel` on Site is unused** — per `check-energy-models.tool.ts:29-36`. Don't rely on it.
 - **Capacity-test upload is destructive** — `uploadCapacityTest` deletes existing `sitepredicted` rows before inserting.
 - **TLS off for the Python call** — `runCapacityTest` disables cert verification via a custom agent when calling the capacity-test API (see [[tests]] and [[site]]).

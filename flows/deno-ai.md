@@ -54,7 +54,7 @@ The assistant never writes on the same pass that proposes. The run is **suspende
 **Answer from live platform data.** Fleet health across every site the user can access (who is disconnected, where the critical alarms and open tickets are), one site's performance KPIs, where energy was lost and why, which sites are missing an energy model, and searches over events and alarms — `denowatts-backend/src/deno-ai/services/system-prompt.service.ts:41-45`.
 
 **Run the two quality audits (DQMS).**
-- **Data Ingest Checker** — audits a site's data acquisition: completeness gaps, stuck or sentinel registers, scaling and multiplier errors, meter-vs-inverter energy balance, template drift, raw-vs-rollup reconciliation, and recent config edits — `denowatts-backend/src/deno-ai/tools/check-data-ingest.tool.ts`, `denowatts-backend/src/deno-ai/data-ingest/data-ingest-checks.ts`.
+- **Data Ingest Checker** — audits a site's data acquisition: completeness gaps, stuck or sentinel registers, scaling and multiplier errors, meter-vs-inverter energy balance, **tracker alignment on NCU channels**, template drift, raw-vs-rollup reconciliation, and recent config edits — `denowatts-backend/src/deno-ai/tools/check-data-ingest.tool.ts`, `denowatts-backend/src/deno-ai/data-ingest/data-ingest-checks.ts`.
 - **Benchmark Checker** — grades whether a site's benchmark can be *trusted*: Deno sensor health (irradiance pair agreement, Tbom probe, supercap, comms, calibration age, recurring shadows) plus model alignment, returning an A/B/C grade with an ordered fix list — `denowatts-backend/src/deno-ai/tools/check-benchmark.tool.ts`, `denowatts-backend/src/deno-ai/benchmark/benchmark-checks.ts`.
 
 **Answer product-knowledge questions** from the public Knowledge Base at `docs.denowatts.com` — how to install hardware, how a capacity test works, what a portal feature means — citing the source pages, and refusing to invent an answer when the docs don't cover it — `denowatts-backend/src/deno-ai/tools/search-docs.tool.ts`.
@@ -242,19 +242,88 @@ The two audit tools are thin wrappers. The analysis lives in two read-only servi
 
 `data-ingest/data-ingest-reconcile.ts` handles **raw-vs-rollup reconciliation**. Its stated premise matters: `channelrollups` are the corrected source of truth, so divergences are *characterized rather than flagged*, and verdicts come from aggregate agreement across the range rather than from any single bucket. `inferGranularityMinutes(rollups)` derives the rollup cadence; `reconcileChannel(input)` produces the per-channel verdict; `relDiff(a, b)` is the shared relative-difference helper.
 
+**Tracker alignment (`checkTracker`)** — new. On single-axis-tracker sites the NCU channel reports, per motor/row,
+both the angle it was *commanded* to (`angSet`) and the angle it actually reached (`angActual`). Comparing the two
+finds rows that are silently losing production while every other check passes.
+
+- **Detection is by shape, not by configuration.** A channel is treated as a tracker when any motor under its `zone`
+  object carries both `angActual` and `angSet` as numbers — no template flag or channel role is required.
+  `fetchTrackerStats` then runs a `$objectToArray` → `$unwind` → `$group` aggregation over `channelraws` to get
+  per-motor sample count, mean and max absolute deviation, and the observed range of both the actual and the
+  commanded angle. A channel that yields motors is tagged `role: "tracker"`.
+  — `denowatts-backend/src/deno-ai/data-ingest/data-ingest.service.ts:139-147`, `:687-747`
+- **Motors with fewer than 12 samples in the window are ignored** — too little data to call.
+- **Stuck rows** — measured angle moved less than **1°** across the whole window while the setpoint swept more than
+  **20°**. Reported as a `warning`. The doc text is deliberately two-sided: a frozen reading is equally consistent
+  with a dead angle encoder as with a jammed drive, and the suggestion says to check both.
+- **Miscalibrated rows** — mean absolute deviation ≥ **3°**, excluding anything already reported as stuck (so one
+  row never produces two findings). Severity escalates to `critical` at ≥ **15°**, where the row is described as
+  effectively not tracking. Findings are sorted worst-first and list at most 10 motors.
+- **Estimated loss is quoted as `1 − cos(deviation)`** of the row's beam irradiance, computed by `cosLossPct(deg)`.
+  This gives the reader a number to weigh the finding by: 3° is ~0.14%, 15° is ~3.4%.
+- **A clean tracker emits a `good` finding**, naming the motor count and the average and worst deviation, so a
+  passing tracker is visible as a confirmed check rather than as silence.
+- All findings are filed under `category: "readings"`.
+— `denowatts-backend/src/deno-ai/data-ingest/data-ingest-checks.ts:517-609`,
+  types in `denowatts-backend/src/deno-ai/data-ingest/data-ingest.types.ts:89-104`
+
+> **The domain rule that keeps this honest:** deviation is measured against the NCU's *own* commanded setpoint, so
+> wind stow and night stow are never deviations — the setpoint moves too. The tool description states this
+> explicitly so the model cannot describe stow behaviour as miscalibration.
+> — `denowatts-backend/src/deno-ai/tools/check-data-ingest.tool.ts:165`
+
 `data-ingest/metric-labels.ts` is a **process-global** label map — metric definitions are not site-specific, so `DataIngestService` populates it once per process and it refreshes only on restart. `metricLabel(path)` renders "AC Power", keeping the prefix on nested paths for disambiguation ("DC Current (zone.11)") and falling back to the raw path when unknown.
 
 ### Benchmark Checker — `benchmark/`
 
 `BenchmarkService.analyzeSite(...)` (~886 lines) — `benchmark/benchmark.service.ts`. Grades data acquisition and benchmark/model alignment A/B/C with sub-scores. The parts worth knowing:
 
-- **The site blocks *are* the energy model** — capacity, geometry, loss parameterization, hardware specs — summarized per block for both the checks and the report. See [[energy-model]].
-- **The `energymodels` registry has two layers:** `OWNER` is the filed expectation (pro-forma + design blocks); `OPERATOR` is the learned, date-versioned layer. A null `endDate` marks the current version.
+- **The current OWNER energy model supplies block geometry; `sites.blocks` is the deprecated fallback.** `resolveGeometryBlocks(siteBlocks, ownerBlocks)` returns the owner model's blocks whenever the site has a current OWNER doc carrying any, and only falls back to `sites.blocks` when it does not (no owner model, or an owner model with no blocks); with neither it returns an empty list. Everything downstream — mount types, the module temperature coefficient, `summarizeModel`, and the alignment checks — reads the resolved list, so a site with an owner model is graded against the filed expectation rather than against whatever is still sitting on the site document. — `denowatts-backend/src/deno-ai/benchmark/benchmark.service.ts:117-124`, `:190-191`. See [[energy-model]].
+- **The `energymodels` registry has two layers:** `OWNER` is the filed expectation (pro-forma + design blocks); `OPERATOR` is the learned, date-versioned layer. A null `endDate` marks the current version. `fetchEnergyModels` now returns `{ summary, ownerBlocks }` so the current owner doc's block geometry is available to the resolver above, and its projection pulls `blocks.module` and `blocks.inverter` alongside `blocks.info`. — `denowatts-backend/src/deno-ai/benchmark/benchmark.service.ts:402-425`
+- **The owner-model-vs-site-blocks drift check was removed.** `checkEnergyModels` used to compare the owner model's blocks against `sites.blocks` field by field (AC max, nameplate, DC, tilt, azimuth, max angle) and deduct 10 points on any difference. With the owner model now *being* the geometry source rather than a second opinion on it, the two sides can no longer disagree and the check was deleted. — `denowatts-backend/src/deno-ai/benchmark/benchmark-checks.ts`
 - **Metered production** is hourly average AC power per revenue meter (`5.2.*`) integrated to energy, with reclosers and BESS meters excluded and hierarchies resolved to the billing tier.
 - **Tracker arbitration:** hourly mean absolute tracking angle from the site's tracker controller channels adjudicates Deno-vs-model max-angle exceedances — a *stable* offset indicates sensor mounting bias rather than a model error.
 - **Portal-accurate site series** come from `siterollups` — shade/snow-adjusted expected, and produced with the meter → `pwrNet` → inverter fallback applied, as hourly averages (kW ≈ kWh per hour).
 - **Calibration dates** are read from the `assets` collection (present on roughly half the Deno fleet), mapping serial → latest calibration date. See [[assets]].
 
+
+---
+
+### How DQMS results must be reported {dev}
+
+Both checkers return far more findings than belong in an answer, and the raw list has no inherent priority — a
+frequency register and a meter-vs-inverter imbalance arrive as peers. The system prompt therefore carries an
+explicit ranking, on the premise that Denowatts is an **energy-accounting** platform and these checks exist to
+establish whether a site's energy accounting can be trusted. Everything else is supporting evidence.
+
+| Rank | Class | How it may be used |
+|---|---|---|
+| 1 | Energy accounting — active power (kW), energy (kWh), meter-vs-inverter balance, counter integrity, scaling proofs | Ranked first in every section |
+| 2 | Electrical measurements — AC/DC voltage and current | To localize and explain an energy problem; never a standalone finding |
+| 3 | Weather reference — Deno irradiance, insolation, ambient/module temperature | To judge whether production was plausible for the conditions |
+| 4 | Tracker data | To attribute actual-vs-expected deltas to miscalibration or stow |
+| 5 | Everything else — frequency, power factor, reactive/apparent power, fault/status registers, gateway health | Diagnostic only; must never lead the assessment or drive an action unless it corrupts energy accounting |
+
+Alongside the ranking, several rules exist to stop specific, observed failure modes:
+
+- **A `good` finding is a passing check, never a problem.** In particular, once a channel's
+  energy-counter-vs-integrated-power check passes, its energy scaling is *proven* — the model must not then
+  hypothesize a unit or multiplier error on that channel's energy registers.
+- **Readings the checks deliberately treat as normal are off-limits for speculation:** `stat*` and `rCustom*` hold
+  raw control/status values where a constant reading is expected; `insDeno` is cumulative kWh/m² judged on its
+  delta, not an instantaneous W/m² reading; `irrDeno3` constantly 0 means no auxiliary sensor is configured, not a
+  fault. Unit and scale conversions between templates are fixed Denowatts settings, not findings.
+- **Inverters de-energize when idle**, so their AC/DC readings legitimately fall to 0 — that is the offline state,
+  not a fault. Grid-tied meters stay energized, so 0 Hz or 0 V *on a meter* is a real finding.
+- **Third-party API weather feeds are context, not site equipment** — their lag or cadence must never be reported
+  as broken hardware.
+- **Recommended actions are ordered by energy-accounting impact**, quantify the kWh or kW at stake where the data
+  allows, and name the specific channel and what to check in the field or in config.
+- **Metric names appear in prose in their human-readable form**, not as raw database field names.
+- **Coincident config edits are stated either way** — "this changed on the same channel yesterday" or "no changes
+  recorded", which rules out a recent edit as the cause.
+
+— `denowatts-backend/src/deno-ai/services/system-prompt.service.ts:56-69`
 
 ---
 

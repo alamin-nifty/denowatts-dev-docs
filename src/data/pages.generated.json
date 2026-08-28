@@ -1042,11 +1042,13 @@
     "name": "Profile",
     "route": "/profile",
     "module": "Users",
-    "purpose": "The signed-in user's own profile: personal details plus their personal notification preferences. The preference record is created on first view (upsert) and holds a single switch for the daily status report email, alongside a Send Report Now button that emails the caller a copy immediately.",
+    "purpose": "The signed-in user's own account settings, in two columns: a read-only identity panel (name, role, email, company) beside editable sections ordered from routine to consequential — personal information, notification preferences, then a danger zone for account deletion. The notification card holds a single switch for the daily status report email plus a Send now button that emails the caller a copy immediately; it is hidden entirely for users with no company.",
     "actions": [
-      "View and edit own profile details",
+      "View own identity summary (name, role badge, email, company)",
+      "Edit own first and last name",
       "Toggle the daily status report email preference",
-      "Send the daily status report to yourself on demand"
+      "Send the daily status report to yourself on demand",
+      "Delete own account (sets status to Deleted and signs out)"
     ],
     "flow": "flows/notification.md"
   }

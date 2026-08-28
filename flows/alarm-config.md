@@ -402,4 +402,4 @@ For the full domain vocabulary, see [[solar-glossary]].
 
 ---
 
-**Related flows:** [[events]] · [[notification]] · [[webhooks]] · [[status]] · [[portfolio]] · [[settings]] · [[channels]] · [[solar-glossary]]
+**Related flows:** [[events]] · [[notification]] · [[webhooks]] · [[status]] · [[portfolio]] · [[settings]] · [[channels]] · [[solar-glossary]] · [[email]]

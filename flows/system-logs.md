@@ -257,4 +257,4 @@ For the full domain vocabulary, see [[solar-glossary]].
 
 ---
 
-**Related flows:** [[audit-trail]] · [[authentication]] · [[webhooks]] · [[data-out]] · [[agenda]] · [[notification]] · [[storage]] · [[quote]] · [[settings]] · [[users]] · [[solar-glossary]]
+**Related flows:** [[audit-trail]] · [[authentication]] · [[webhooks]] · [[data-out]] · [[agenda]] · [[notification]] · [[storage]] · [[quote]] · [[settings]] · [[users]] · [[solar-glossary]] · [[email]]

@@ -384,4 +384,4 @@ For the full domain vocabulary, see [[solar-glossary]].
 
 ---
 
-**Related flows:** [[notification]] · [[events]] · [[alarm-config]] · [[site]] · [[companies]] · [[settings]] · [[quote]] · [[solar-glossary]]
+**Related flows:** [[notification]] · [[events]] · [[alarm-config]] · [[site]] · [[companies]] · [[settings]] · [[quote]] · [[solar-glossary]] · [[email]] · [[hubspot-crm-legacy]]

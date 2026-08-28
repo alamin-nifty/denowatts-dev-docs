@@ -226,4 +226,4 @@ For the full domain vocabulary, see [[solar-glossary]].
 
 ---
 
-**Related flows:** [[report]] · [[data-out]] · [[notification]] · [[webhooks]] · [[solar-glossary]]
+**Related flows:** [[report]] · [[data-out]] · [[notification]] · [[webhooks]] · [[solar-glossary]] · [[email]]

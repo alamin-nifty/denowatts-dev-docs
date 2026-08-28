@@ -99,15 +99,20 @@ Every row is a count bucketed into three cumulative columns — **1+ Days**, **7
 
 **Status table**
 
-| Row | What it counts |
-|---|---|
-| Disconnected Sites | Sites currently disconnected, bucketed by time since last report |
-| Disconnected Channels | Channels currently disconnected, same bucketing |
-| Critical Alarms (Open) | Unacknowledged, still-open critical alarms, by alarm start date |
-| Tickets (New) | Tickets in NEW status, by creation date |
-| Tickets (In Progress) | Tickets in IN_PROGRESS status, by creation date |
-| Open Tasks | Flagged, still-open events, by creation date |
-| Unread Mentions | The recipient's own unread mention notifications |
+| Row | What it counts | Scope |
+|---|---|---|
+| Disconnected Sites | Sites currently disconnected, bucketed by time since last report | Live sites only |
+| Disconnected Channels | Channels currently disconnected, same bucketing | Live sites only |
+| Critical Alarms (Open) | Unacknowledged, still-open critical alarms, by alarm start date | Live sites only |
+| Tickets (New) | Tickets in NEW status, by creation date | Live sites only |
+| Tickets (In Progress) | Tickets in IN_PROGRESS status, by creation date | Live sites only |
+| Open Tasks | Flagged, still-open events, by creation date | All sites |
+| Unread Mentions | The recipient's own unread mention notifications | n/a — per recipient |
+
+**"Live sites only"** means the site's service status is Active & Learning or Active Not Learning. A site still
+being Ordered, Shipped or Commissioned — or one that has been Discontinued — is not something anyone can act
+on in a disconnection or alarm row, so it is left out of those counts. The New Sites table below deliberately
+does the opposite: it exists precisely to surface sites that are *not* live yet.
 
 **Performance table** — a single count: sites where yesterday's EPI differs from the trailing 7-day EPI by more than 10%.
 
@@ -117,6 +122,7 @@ Every row carries a **View** button that deep-links into the portal with the mat
 
 Notes on the rules:
 
+- **Only live sites appear in the status table.** Disconnections, critical alarms and tickets are counted for sites in an active service status; Open Tasks still counts across every site.
 - **Unread Mentions counts from day zero.** Every other row needs an item to be at least a day old before it appears; a mention counts the moment it is created, otherwise today's mentions would be invisible in all three columns.
 - **Emails are sent one recipient at a time**, never as a shared `to:` list — recipients never see each other's addresses, and each person's Unread Mentions count is genuinely their own.
 - **Opt-in is explicit.** A user with no saved preference document is *excluded* from the scheduled send, not defaulted in. (The profile UI seeds the document as enabled on first visit, so the practical default is on for anyone who opens the page.)
@@ -237,6 +243,45 @@ The scheduling brain plus the report aggregation engine (~2,550 lines). The form
 - `getAvailableMetrics(input: MetricsInput): Promise<MetricsResponseDto>` — metric discovery for the column picker.
 - Module-level exports: `REPORT_DATE_PERIOD_SORT_ID` (`"date"`), `buildReportSortStage(...)`, `metricStringsToObjectIds(ids)`.
 
+#### The `getReportNew` aggregation pipeline {dev}
+
+One pipeline produces the whole grid — detail rows, per-group header rows and per-group subtotal rows — already
+interleaved and sorted, so Node does no row assembly.
+
+| # | Stage | What it does |
+|---|---|---|
+| 1 | `$match` | Restrict to the requested site ids. |
+| 2 | lookups | Site properties, metrics, performance data. |
+| 3 | `$group` | One bucket per (site × period): sum metrics, carry the site-level fields the projection needs. |
+| 4 | `$addFields` | Tag detail rows (`isSubtotal:false`, `isGroupHeader:false`, `_sortRank:1`) and compute `__sortValue`. |
+| 5 | `$group` + `$project` + `$unwind` + `$replaceRoot` | Bucket each group, `$push` its detail rows, then emit `[header, ...details, subtotal]`. |
+| 6 | `$sort` | `_sortRank` first (headers pinned to 0, details 1, subtotals 2), then `__sortValue`. |
+| 7 | `$project` | Final column shape; internal fields dropped. |
+
+Two changes in this refactor both exist to keep large reports from failing outright:
+
+- **Stage 5 was a `$facet`, and `$facet` has a hard 100 MB ceiling.** It ran three independent branches
+  (`headers` / `details` / `subtotals`) and `$concatArrays`'d them — but `$facet` materialises its entire output
+  into a *single document*, capped at 100 MB. A day- or week-grouped report over a large fleet (~425 sites × 365
+  days ≈ 129k rows) overflowed that cap and the whole aggregation failed. Grouping per bucket and pushing the
+  rows instead buffers only one group at a time and has no such ceiling. Site grouping with no date periods has
+  neither headers nor subtotals, so its detail rows skip stage 5 entirely and stream straight through.
+  — `denowatts-backend/src/report/report.service.ts:1812-1890`
+- **Subtotal accumulators are namespaced with a `__subtotal_` prefix.** Metric names are user-defined, and the
+  subtotal accumulators now share a document with the detail rows they were pushed alongside — without the prefix
+  a metric called e.g. `acNameplate` would shadow the accumulator of the same name. The final `$project` maps them
+  back to their public names. — `denowatts-backend/src/report/report.service.ts:1336-1340`
+- **Stage 3 only carries the site fields the final `$project` actually reads.** Every field the `$group` carries is
+  copied once per (site × period) bucket, so pulling through a field nobody projected multiplies its cost by the
+  number of periods. Each site property is now gated on a `needs*` flag derived from `siteProperties`. Two fields
+  get special treatment: only `location.state` is carried rather than the whole location subdocument, and `blocks`
+  — the heaviest site field — is reduced at group time to three short deduped string arrays (`moduleModels`,
+  `inverterModels`, `mountTypes`) instead of a full copy of every block per bucket.
+  — `denowatts-backend/src/report/report.service.ts:1342-1358`, `:1753-1790`
+
+> Sort behaviour is unchanged: under site grouping the subtotal row still carries the sentinel group key
+> `"zzzzzzzzzz"` so it sorts last within its period, exactly as the `$facet` version did.
+
 ### `ReportExcelService` — `denowatts-backend/src/report/services/report-excel.service.ts`
 Orchestrates the Excel download from the unified `columns[]` input: `adaptColumnsToEngineInputs` → `resolveMetricIdentifiers` (including metrics referenced *only* inside custom-column formulas) → `ReportService.getReportNew` → `buildReportExcelBuffer`. A top-level `activeSort` (e.g. sort by site name, which is not a column) overrides the columns-derived sort. Returns `{ buffer, fileName }`.
 
@@ -253,7 +298,7 @@ Orchestrates the Excel download from the unified `columns[]` input: `adaptColumn
 Builds and sends the daily digest (~745 lines, most of it inline email HTML).
 - `sendDailyStatusReport(input, recipientEmail?)` — company-scoped. Throws `NotFoundException` if the company id is missing or unknown.
 - `sendAllSitesDailyStatusReport(recipientEmail?)` — the super-admin, every-site counterpart.
-- `buildAndSendReport(scope, recipientEmail?)` *(private)* — queries sites, channels, events (alarms/tickets/tasks), computes the buckets, resolves recipients, then fans out one email per recipient via `Promise.allSettled`.
+- `buildAndSendReport(scope, recipientEmail?)` *(private)* — queries sites, channels, events (alarms/tickets/tasks), computes the buckets, resolves recipients, then fans out one email per recipient via `Promise.allSettled`. The site query is split into two id lists: `siteIds` (every non-deleted site in scope) and `activeSiteIds` (those whose `serviceStatus` is `ACTIVE_AND_LEARNING` or `ACTIVE_NOT_LEARNING`). Disconnected sites/channels, critical alarms and tickets query `activeSiteIds`; Open Tasks queries `siteIds`; the EPI and new-site counts run over the full `sites` array — `denowatts-backend/src/report/services/report-daily-status.service.ts:169-245`.
 - `bucketByDaysSince(entities, getDate, minThreshold = 1)` *(private)* — the shared cumulative bucketer. A missing date is treated as infinitely stale. Unread mentions pass `0`.
 - `getOptedInCompanyRecipients` / `getOptedInSuperAdminRecipients` / `getRecipientByEmail` *(private)* — audience resolution.
 - `countSitesWithDailyEpiExceedingWeek(sites)` *(private)* — counts sites where `kpi.day.epi` exceeds `kpi.week.epi` by more than 10%; sites missing either value are skipped.
@@ -410,6 +455,8 @@ Two `migrate-mongo` migrations also landed alongside this work: `migrations/2026
 - **Ratio-named metrics are scaled ×100.** `/^r[A-Z]/` on the metric name drives it, inside the generated Mongo expression. — `denowatts-backend/src/report/utils/build-mongo-expr.util.ts`
 - **acNameplate and dcCapacity stored in kW, exposed in MW.** — `denowatts-backend/src/report/report.service.ts`, `denowatts-backend/src/report/utils/site-property-meta.util.ts`
 - **Missing operands in a custom column return null, not 0.** — `denowatts-backend/src/report/utils/custom-column-eval.util.ts`
+- **Report rows are assembled inside MongoDB, not in Node**, and the group/subtotal stage is deliberately *not* a `$facet` — `$facet`'s 100 MB single-document cap failed day- and week-grouped reports over large fleets. — `denowatts-backend/src/report/report.service.ts:1812-1890`
+- **The aggregation carries only the site properties the report actually asked for.** Anything else would be duplicated once per period bucket. — `denowatts-backend/src/report/report.service.ts:1342-1357`
 - **Division by zero returns 0 in the Mongo pipeline, null in JS evaluation.** — `denowatts-backend/src/report/utils/build-mongo-expr.util.ts`, `denowatts-backend/src/report/utils/custom-column-eval.util.ts`
 - **Test report templates auto-expire after 1 hour** via a MongoDB TTL index. — `denowatts-backend/src/report/schemas/test-report-template.schema.ts`
 - **Value-band coloring applies only to `rAvailabilityEquipment` and `rEpi`;** `<50` pink, `50–94` yellow, `≥95` green, with negatives and nulls in the low band. — `denowatts-backend/src/report/utils/excel-generator.util.ts`
@@ -422,6 +469,7 @@ Two `migrate-mongo` migrations also landed alongside this work: `migrations/2026
 - **One job name per audience.** `daily-status-report` (one doc per company, distinguished by `data.companyId`, concurrency 5) and the singleton `daily-status-report-all-sites` (concurrency 1). Both `repeatEvery("0 10 * * *", { timezone: "UTC", skipImmediate: true })`, 10-minute lock lifetime. — `denowatts-backend/src/report/daily-status-report-jobs.constants.ts`, `denowatts-backend/src/report/report-daily-status.processor.ts`
 - **A company's first site creates its job immediately.** A `SITE_CREATED` event triggers `ensureDailyStatusReportJob` rather than waiting for the next boot; `unique(..., { insertOnly: true })` makes creation atomic so the boot loop and the event cannot race. — `denowatts-backend/src/report/report-daily-status.processor.ts`
 - **Opt-in is explicit and document-backed.** Users without a `UserNotification` document are excluded from the scheduled send even though the schema default is `true`. — `denowatts-backend/src/report/services/report-daily-status.service.ts`
+- **Disconnection, alarm and ticket rows count only sites in an active service status** (`ACTIVE_AND_LEARNING` / `ACTIVE_NOT_LEARNING`); a site in Ordered / Shipped / Commissioning / Discontinued isn't actionable there. Open Tasks is *not* filtered this way and still counts across every site in scope. — `denowatts-backend/src/report/services/report-daily-status.service.ts:169-245`
 - **Super-admins are excluded from company reports** even if they have a `company` set, and receive the all-sites edition instead. — `denowatts-backend/src/report/services/report-daily-status.service.ts`
 - **One email per recipient, never a shared `to:` list** — protects addresses and keeps per-user mention counts correct. Sent via `Promise.allSettled`, so one failure doesn't block the rest; each rejection is logged and sent to Sentry. — `denowatts-backend/src/report/services/report-daily-status.service.ts`
 - **Unread mentions bucket from day 0**, every other row from day 1. — `denowatts-backend/src/report/services/report-daily-status.service.ts`
@@ -535,4 +583,4 @@ For the full domain vocabulary, see [[solar-glossary]].
 
 ---
 
-**Related flows:** [[portfolio]] · [[analytics]] · [[settings]] · [[metrics]] · [[agenda]] · [[authentication]] · [[audit-trail]] · [[system-logs]] · [[events]] · [[notification]] · [[users]] · [[solar-glossary]]
+**Related flows:** [[portfolio]] · [[analytics]] · [[settings]] · [[metrics]] · [[agenda]] · [[authentication]] · [[audit-trail]] · [[system-logs]] · [[events]] · [[notification]] · [[users]] · [[solar-glossary]] · [[email]]

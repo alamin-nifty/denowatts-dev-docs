@@ -346,4 +346,4 @@ For the full domain vocabulary (irradiance, POA, performance ratio, kWh/kWp, inv
 
 ---
 
-**Related flows:** [[portfolio]] · [[site]] · [[users]] · [[companies]] · [[solar-glossary]]
+**Related flows:** [[portfolio]] · [[site]] · [[users]] · [[companies]] · [[solar-glossary]] · [[email]] · [[e-signature]]

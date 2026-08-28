@@ -71,7 +71,9 @@ This is the only notification setting an ordinary user controls for themselves; 
 
 > **Now wired up (changed).** This preference used to be inert. The daily status report send path reads it: `getOptedInCompanyRecipients` and `getOptedInSuperAdminRecipients` both query `usernotifications` for `dailyStatusReport: true` and deliver only to those users — `denowatts-backend/src/report/services/report-daily-status.service.ts`.
 >
-> One subtlety survives: the scheduled job requires an **existing document** with the flag true. The schema default is `true`, but a user who has never opened their Profile page has no document at all and is therefore *excluded*, not defaulted in. The Profile card seeds the document on first view, so in practice anyone who has visited the page is opted in — `denowatts-portal/src/features/profile/components/NotificationPreferences.tsx`.
+> One subtlety survives: the scheduled job requires an **existing document** with the flag true. The schema default is `true`, but a user who has never opened their Profile page has no document at all and is therefore *excluded*, not defaulted in. Opening the Profile page fires the preference query, and that query upserts — so in practice anyone who has visited the page is opted in — `denowatts-backend/src/user-notification/user-notification.service.ts:14-23`.
+>
+> **Preferences saved before 2026-08-11 were stranded and have been recovered by a migration.** Removing the schema's explicit collection name made Mongoose fall back to its default pluralization, so the app silently switched from reading `user-notification` to a brand-new, empty `usernotifications` collection. Every preference saved before that — including deliberate "off" choices — was left behind, and because a *read* upserts with a default of `true`, simply opening the Profile page could re-subscribe someone who had turned the report off long ago. A migration merges the two collections and restores each user's last confirmed choice — see **The collection cutover and its migration** below.
 
 ---
 
@@ -95,7 +97,7 @@ This is the only notification setting an ordinary user controls for themselves; 
 - Notification Management (company-wide) — `denowatts-portal/src/features/settings/notification-management/NotificationManagementPage.tsx` (route `/settings/notification-management`)
 - System Notification admin — `denowatts-portal/src/features/settings/system-notification/SystemNotificationPage.tsx` (route `/settings/system-notification`)
 - System Notification modal on login — `denowatts-portal/src/features/settings/system-notification/SystemNotificationModal.tsx`
-- **Per-user preferences** — `denowatts-portal/src/features/profile/components/NotificationPreferences.tsx`, on the Profile page (route `/profile`, `denowatts-portal/src/routes/_dashboard/profile.tsx`)
+- **Per-user preferences** — `denowatts-portal/src/features/profile/components/NotificationPreferences.tsx`, one card on the Profile page (route `/profile`, `denowatts-portal/src/routes/_dashboard/profile.tsx` → `denowatts-portal/src/features/profile/ProfilePage.tsx`)
 
 ---
 
@@ -114,7 +116,9 @@ Both are scoped to the caller via `@CurrentUser()` — there is no way to read o
 
 ### Schema — `denowatts-backend/src/user-notification/schemas/user-notification.schema.ts`
 
-Collection **`user-notification`** (singular, hyphenated — unusual for this codebase), `timestamps: true`.
+Collection **`usernotifications`** — Mongoose's default pluralization. The schema previously pinned
+`collection: "user-notification"` (singular, hyphenated); commit `dc78727d` removed that option, which
+silently changed the collection the app reads and writes. `timestamps: true`.
 
 | Field | Notes |
 |---|---|
@@ -129,9 +133,75 @@ Both methods are a single `findOneAndUpdate` with `{ new: true, upsert: true, se
 
 `UpdateUserNotificationInput` is derived from the schema with `PartialType(OmitType(...))`, stripping `_id`, `userId`, `createdAt` and `updatedAt` — so a client cannot retarget the update at another user by passing `userId` — `:5-8`.
 
+### The Profile page {dev}
+
+`denowatts-portal/src/routes/_dashboard/profile.tsx` → `denowatts-portal/src/features/profile/ProfilePage.tsx`
+
+The page was a single `ProfileForm.tsx` (name fields plus a delete-account card, both in one component). It is now a
+two-column layout — a sticky read-only identity column on the left, and the editable sections stacked beside it in
+order from routine to consequential:
+
+| Component | Role |
+|---|---|
+| `ProfileIdentityCard.tsx` | Read-only "who am I": monogram, full name, role badge, email, company. The facts a user *cannot* change, kept as a stable reference point |
+| `PersonalInfoCard.tsx` | First/last name behind an explicit **Edit** mode. Read mode renders plain values rather than disabled inputs, so the page never looks like an unfilled form; Save/Cancel exist only while editing. Email is shown here too, with a lock tooltip explaining it is the sign-in identity |
+| `NotificationPreferences.tsx` | The daily-status-report toggle and **Send now** — the subject of this doc |
+| `DangerZoneCard.tsx` | Account deletion, isolated in a `tone='danger'` card at the bottom |
+
+`SectionCard.tsx` and `SettingRow.tsx` are the shared shell — a titled card with optional icon, header action and
+footer, and a title/description/action row inside it. `utils.ts` holds `ROLE_META` (role → label + Tag colour) and
+`getInitials(firstName, lastName, email)` for the avatar monogram.
+
+Behaviour worth noting:
+
+- **Deleting an account is a status change, not a delete.** `DangerZoneCard` confirms via an Antd modal, then sends
+  `UPDATE_USER` with `status: UserStatus.Deleted` and calls the shared `useLogout()` so the session is revoked
+  server-side and local state torn down — the user is signed out immediately.
+  — `denowatts-portal/src/features/profile/components/DangerZoneCard.tsx:31-51`
+- **Name edits refetch `GET_USER`** rather than patching the cache, so every consumer of the current user sees the
+  new name — `denowatts-portal/src/features/profile/components/PersonalInfoCard.tsx:50-52`.
+- **Names are trimmed and require at least 2 characters**
+  — `denowatts-portal/src/features/profile/components/PersonalInfoCard.tsx:131-146`.
+
 ### Client — portal
 
 Query `USER_NOTIFICATION_PREFERENCES` — `denowatts-portal/src/graphql/queries/notificationQueries.ts:34`; mutation `UPDATE_USER_NOTIFICATION_PREFERENCES` — `denowatts-portal/src/graphql/mutations/notificationMutations.ts:15`. The component writes the mutation result back into the Apollo cache so the toggle reflects the server's value — `denowatts-portal/src/features/profile/components/NotificationPreferences.tsx:21-33`.
+
+### The collection cutover and its migration {dev}
+
+`denowatts-backend/migrations/20260821150000-merge-user-notification-collections.js`
+
+Commit `dc78727d` (2026-08-11) dropped `collection: "user-notification"` from the schema. Mongoose's default
+pluralization for the `UserNotification` class is `usernotifications`, so from that deploy on the app read and
+wrote a **different, empty collection** — no error, no data loss warning, just every pre-cutover preference
+silently invisible.
+
+Two properties of this module turned that into a behaviour change rather than a cosmetic one:
+
+- `dailyStatusReport` defaults to **`true`**, and
+- **both** `getMyPreferences` (a read) and `updatePreferences` upsert with `setDefaultsOnInsert`.
+
+So merely opening the notification settings page after the cutover created a fresh document with the report
+**enabled**, for a user whose last explicit choice may well have been to disable it — with no action on their part
+that could be read as consent.
+
+**Merge policy, keyed by `userId`:**
+
+| Situation | Outcome |
+|---|---|
+| Only in old collection | Inserted into `usernotifications` as-is |
+| Only in new collection | Left alone — already correct |
+| In both, new doc is `false` | Keep new. `false` is never spuriously created; it only comes from an explicit choice |
+| In both, new doc is `true` **and** `updatedAt !== createdAt` | Keep new — the edit proves a genuine post-cutover action |
+| In both, new doc is `true` **and** never touched since creation | **Restore the old value.** Indistinguishable from the spurious upsert-default case, so the migration errs toward the user's last confirmed choice |
+
+Duplicate `userId`s on either side keep the first seen and log the rest. The migration finishes by dropping
+`user-notification`, which makes it **idempotent** — a re-run finds no old collection and no-ops — and also makes
+it **irreversible**: `down()` throws, because once the collections are merged the old docs cannot be told apart
+again.
+
+> The tie-break rule is deliberately asymmetric: it would rather leave someone unsubscribed who wanted the email
+> than keep emailing someone who had turned it off.
 
 ### Gotchas
 
@@ -139,7 +209,7 @@ Query `USER_NOTIFICATION_PREFERENCES` — `denowatts-portal/src/graphql/queries/
 - **The card is hidden for users without a company**, so such a user never gets a preference document and is silently excluded from the send — `denowatts-portal/src/features/profile/components/NotificationPreferences.tsx`.
 - **"Send Report Now" ignores the toggle.** The on-demand mutation delivers to the caller regardless of their opt-in state — `denowatts-backend/src/report/resolvers/report-daily-status.resolver.ts`.
 - **The upsert is not race-safe under concurrency** — two simultaneous first-time requests for the same user can both attempt an insert; the `unique` index on `userId` makes the loser fail with a duplicate-key error rather than returning the winner's document — `:16`.
-- **The collection name is `user-notification`** (singular, hyphenated), which does not match the Mongoose pluralization convention used elsewhere — worth knowing when querying directly — `:7`.
+- **The collection name is `usernotifications`**, Mongoose's default pluralization, since `dc78727d` dropped the explicit `collection` option. Anything written before 2026-08-11 lived in `user-notification` and was moved across by the migration below — `:7`.
 
 ---
 
@@ -519,4 +589,4 @@ For the full domain vocabulary, see [[solar-glossary]].
 
 ---
 
-**Related flows:** [[events]] · [[settings]] · [[webhooks]] · [[alarm-config]] · [[companies]] · [[site]] · [[report]] · [[users]] · [[system-logs]] · [[solar-glossary]]
+**Related flows:** [[events]] · [[settings]] · [[webhooks]] · [[alarm-config]] · [[companies]] · [[site]] · [[report]] · [[users]] · [[system-logs]] · [[solar-glossary]] · [[email]]

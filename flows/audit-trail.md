@@ -279,4 +279,4 @@ For the full domain vocabulary, see [[solar-glossary]].
 
 ---
 
-**Related flows:** [[system-logs]] · [[authentication]] · [[users]] · [[companies]] · [[site]] · [[channels]] · [[assets]] · [[alarm-config]] · [[energy-model]] · [[events]] · [[report]] · [[storage]] · [[quote]] · [[settings]] · [[deno-ai]] · [[solar-glossary]]
+**Related flows:** [[system-logs]] · [[authentication]] · [[users]] · [[companies]] · [[site]] · [[channels]] · [[assets]] · [[alarm-config]] · [[energy-model]] · [[events]] · [[report]] · [[storage]] · [[quote]] · [[settings]] · [[deno-ai]] · [[solar-glossary]] · [[email]]
