@@ -493,7 +493,7 @@
     "name": "Notification Management",
     "route": "/settings/notification-management",
     "module": "Settings",
-    "purpose": "Company-wide notification settings table (11 rows: 3 alarm severities + 8 event categories). For each row, configure whether in-app and email notifications are enabled, which site managers and additional users receive them, and whether the rule is active. Super Admins can select any company; other users see their own company. Changes are persisted to Company.notificationSettings via updateCompany mutation.",
+    "purpose": "Company-wide notification settings table (11 rows: 3 alarm severities + 8 event categories). Each row is three independent gates that must ALL be set for anything to send: the Enabled toggle (isActive), the Targeted Users columns (Site Managers and/or Other Users) which decide WHO, and the Delivery Method columns (In App / Email) which decide HOW those same people are reached. Email is a channel switch, not an audience — it never widens delivery beyond the targeted users. Super Admins can select any company; other users see their own. Persisted to Company.notificationSettings via updateCompany.",
     "actions": [
       "Toggle notification rule active/inactive",
       "Enable/disable in-app notifications per type",
@@ -508,7 +508,7 @@
     "name": "Global Alarm Configuration",
     "route": "/settings/global-alarm-configuration",
     "module": "Settings",
-    "purpose": "System-wide alarm rule definitions (AlarmConfig records) applied to every site. Each rule defines a target (site metric / channel metric / channel status), an effect, a severity (CRITICAL/HIGH/ROUTINE), channel prefixes, a metric, an operator (>, <, =) plus threshold, a suppression level, optional delay/condition, and a notifySupport flag. Editing (create/update/delete/reorder/bulk-save) is Super Admin only; other users see a read-only view. Rules are consumed downstream by the alarm-event pipeline and webhook notifications.",
+    "purpose": "System-wide alarm rule definitions (AlarmConfig records) applied to every site — one global catalog, not per-company. Each rule defines a target (site metric / channel metric / channel status), an effect, a severity (CRITICAL/HIGH/ROUTINE), channel prefixes, a metric, an operator (>, <, =) plus threshold, a suppression level, optional delay/condition, and a notifySupport flag. Only two of those actually drive behaviour in this platform: severity is the key into each company's notification rows (deciding who is emailed), and notifySupport CCs Denowatts support — bypassing the notification grid entirely, and copying support unconditionally outside production. Threshold, operator, suppression, delay and condition are stored and displayed but never read here; evaluation happens in an upstream pipeline. Editing is Super Admin only; other users get a read-only view.",
     "actions": [
       "Add new alarm rule",
       "Edit alarm fields (target, effect, severity, metric, operator, threshold, suppression, delay, condition, notify support)",

@@ -2,15 +2,15 @@
 title: Alarm Config
 owner: alamin-nifty
 status: draft
-version: 3
-updated_at: 2026-06-10
+version: 4
+updated_at: 2026-09-09
 ---
 
 # Alarm Config
 
-An **alarm rule** describes a condition that should raise an alarm anywhere in the fleet — "a sensor went silent", "an inverter is reporting an abnormal value", "a site metric crossed a threshold". The Alarm Config module is the central catalog of those rules: each one names what it watches, how bad it is (Critical / High / Routine), the threshold it compares against, and whether Denowatts support should be copied when it fires. Platform administrators author the rules once, and every open alarm across every site is then counted and rolled up by rule on the portfolio dashboard.
+An **alarm rule** describes a condition that should raise an alarm anywhere in the fleet — "a sensor went silent", "an inverter is reporting an abnormal value", "a site metric crossed a threshold". The Alarm Config module is the central catalog of those rules: each one names what it watches, how bad it is (Critical / High / Routine), the threshold it compares against, and whether Denowatts support should be copied when the alarm opens. Platform administrators author the rules once. Every open alarm across every site is then counted and grouped by rule on the portfolio dashboard.
 
-> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what alarm rules are, what they contain, where they're actually evaluated, and the rules that govern them. *Developer* adds the full GraphQL surface, the service and aggregation internals, every schema and DTO shape, file references, and a solar-terminology primer.
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains what alarm rules are, which of their settings actually change anything, who gets emailed when an alarm opens, when Denowatts support is copied, and which combinations send nothing at all. *Developer* adds the full GraphQL surface, the service and aggregation internals, every schema and DTO shape, file references, and a solar-terminology primer.
 
 ---
 
@@ -29,8 +29,8 @@ flowchart TD
     MEAS["Site measurements"] --> PIPE
     PIPE -->|"alarm events arrive<br/>pre-flagged with<br/>rule + severity"| EVENTS[("Alarm events")]
     EVENTS --> DASH["Portfolio dashboard<br/>open-alarm rollup per rule"]
-    CAT -->|"only rule name +<br/>support flag"| DISPATCH["Alarm notification dispatch"]
-    EVENTS --> DISPATCH
+    CAT -->|"only the<br/>support flag"| ALERTS["Alarm emails and<br/>bell notifications"]
+    EVENTS --> ALERTS
 ```
 
 The platform authors and displays the rules; the actual threshold checking happens in the upstream pipeline, and alarms come back already classified.
@@ -58,6 +58,121 @@ This platform **stores and displays** the rules — it does not run them. The ac
 
 ---
 
+## Which settings on this screen actually change anything
+
+This is the most common surprise on this screen. Most of the boxes describe the
+rule for the upstream system that runs it. Only two of them change what this
+platform does.
+
+| Column on the screen | What it changes here |
+|---|---|
+| **Severity** | **Decides who gets told.** Critical, High and Routine are matched against each company's notification rows. |
+| **Notify Support** | Decides whether Denowatts support is copied on the alarm email. |
+| Name | Labels the rule on the portfolio dashboard, and has to be unique. |
+| Order | The order the rows appear in. |
+| Target, Effect, Channel Prefix, Metric | Describe what the rule watches. Read by the upstream system, not by this platform. |
+| Threshold, Operator, Suppression, Delay, Condition | Stored and shown on the screen. **Nothing in this platform reads them.** |
+
+**Changing Threshold, Operator, Suppression, Delay or Condition does not change
+when alarms fire in this platform.** The threshold checking happens in an
+upstream system that is not part of this codebase, and alarms arrive here
+already decided. Whether that upstream system picks up an edit made here, and
+how quickly, is not confirmed — see *Where the rules are evaluated* above.
+
+**Target** also empties two of the other boxes for you. Set it to a site metric
+and **Channel Prefix** is cleared. Set it to a channel status and **Metric** is
+cleared. This happens as soon as you change Target, and again when you save.
+
+---
+
+## Who gets an email when an alarm opens
+
+When an alarm opens or closes, the platform starts from the alarm's
+**Severity** — Critical, High or Routine. It does not look at the alarm rule
+for anything else except Notify Support.
+
+It then checks **every company that can see the site**: the company that owns
+the site, plus every company given access to it. In each one it looks for the
+notification row matching that severity, on **Settings → Notification
+Management**, and uses it only if that row is switched on.
+
+From a matching row it collects the people — the site managers if Site Managers
+is ticked, plus anyone listed under Other Users. Then Email and In App decide
+how those people are told.
+
+| Row for this severity | Site Managers | Email | In App | Site managers get |
+|---|---|---|---|---|
+| on | ✓ | ✓ | — | an email |
+| on | ✓ | — | ✓ | a bell notification only, **no email** |
+| on | ✓ | ✓ | ✓ | both |
+| on | ✓ | — | — | **nothing** |
+| on | — | ✓ | ✓ | nothing — nobody was picked |
+| **off** | ✓ | ✓ | ✓ | **nothing** |
+| **no row for that severity** | — | — | — | **nothing** |
+
+**A person also has to be an active user.** Anyone deleted or deactivated is
+dropped from the list, even when they are named under Other Users, and nobody
+is told they were skipped.
+
+**Another company's settings can still send the email.** Because every company
+with access to the site is checked, a site manager may be emailed through a
+second company's row even when the owning company's row for that severity is
+switched off.
+
+For the full behaviour of that screen, see [[notification]]. For where the rows
+are stored, see [[companies]].
+
+---
+
+## When Denowatts support gets copied
+
+**Notify Support ignores the notification screen completely.** Support is added
+after the company rows have been worked out, so it is not affected by any of
+them.
+
+| Where the platform is running | Notify Support | Support gets |
+|---|---|---|
+| The live system | on | the alarm email |
+| The live system | off | nothing |
+| A test or staging system | on | the alarm email |
+| A test or staging system | **off** | **the alarm email anyway** — the tick box is ignored outside the live system |
+
+So on the live system, a rule with Notify Support ticked still emails support
+even when every company row for that severity is switched off. Support gets the
+email and nobody else does.
+
+The reverse is the one that catches people out on test systems: **support
+receives every alarm email there regardless of the tick box.** Turning Notify
+Support off on a test system does not stop them.
+
+---
+
+## What produces nothing
+
+Settings that look correct but send nothing:
+
+- **Every company row for that severity switched off, and Notify Support off** —
+  no email and no bell notification. Nobody hears anything.
+- **A row switched on with neither Email nor In App ticked** — nothing is sent.
+  Ticking the row on its own is not enough.
+- **A row switched on that names nobody** — no site managers, no other users, so
+  there is no one to send to.
+- **A site with no managers**, on a row where only Site Managers is ticked.
+- **People who are deactivated or deleted** — silently skipped.
+- **An alarm that belongs to an alarm group** — the platform refuses to send
+  anything for it. See [[events]].
+- **An alarm with no severity** — no company row can match, so nobody is found.
+- **Editing Threshold, Operator, Suppression, Delay or Condition** — these
+  change nothing in this platform.
+- **Deleting a rule** — its existing alarms are not deleted. They stay in the
+  system and simply stop appearing in the dashboard rollup.
+
+One more worth knowing: if the email fails to send, **nothing is retried and
+nobody is warned**. The failure is written to the logs, and the alarm is not
+sent again.
+
+---
+
 ## Who can do what
 
 - **Platform administrators (Super Admins)** are the only ones who can create, edit, reorder, or delete rules.
@@ -72,7 +187,7 @@ This platform **stores and displays** the rules — it does not run them. The ac
 - **Rule names must be unique.**
 - **Deleting a rule does not clean up its alarms.** Existing alarm events keep pointing at the deleted rule; they simply vanish from the per-rule rollup.
 - **The open-alarm rollup counts only genuinely open alarms** — not closed, not deleted, not archived, and not group parents — and tracks how many of them are still unacknowledged.
-- **Support is only auto-copied in production** when a rule's support flag is on (in test environments support is always copied).
+- **Notify Support works differently on test systems.** On the live system support is copied only when the box is ticked; on a test or staging system support is copied on every alarm email whether or not it is ticked. See *When Denowatts support gets copied*.
 - **Suppression level is limited to 1–5 and the condition to two presets** in the editing screen, even though the underlying storage is more permissive.
 
 ---
@@ -336,16 +451,17 @@ No backend code reads `threshold`/`operator`/`suppressionLevel`/`delay`/`conditi
 ### 2. Alarm notification dispatch (webhooks) — `denowatts-backend/src/webhooks/webhook.service.ts`
 Triggered by `POST /webhooks/event/process-alarm` (`webhook.controller.ts:38-42`) with body `EventProcessAlarmDto` (`webhooks/dto/webhook-site.dto.ts:115-122` — `_id: ObjectId` required, optional `description`). This is how an alarm open/close turns into emails + in-app notifications.
 
-`processAlarm(dto)` (`webhook.service.ts:422-581`):
-1. Loads the event by `_id`, populating `site.managers` (emails) and `alarmConfig` (selecting only `name notifySupport`) (`:426-439`).
-2. Guards: throws `NotFoundException` if the event is missing or `!event.isAlarm` (`:441-443`); throws if `event.alarmGroup` is set ("Event is part of an alarm group") (`:445-447`).
-3. Loads candidate companies for the site (owner + access companies, de-duplicated) via `loadCompaniesForAlarmNotification` (`:59-106`).
-4. `collectAlarmNotificationRecipientIdSets` (`:111-194`) maps the **event severity** to a `NotificationEventType` and finds each company's matching, `isActive` notification setting; from it gathers email + in-app recipient user ids (site managers and/or explicit "other users") based on `emailNotifications` / `inAppNotifications` flags. **This is the link between alarm severity and who gets notified.**
-5. Creates in-app notifications for in-app recipients (`:486-503`).
-6. **`notifySupport` consumption:** reads `alarmConfig.notifySupport`; `buildSupportEmailRecipientsForAlarm` (`:196-198`) adds the DenoWatts support email **only in production** and only when `notifySupport` is true. This is the single place `AlarmConfig.notifySupport` is used.
-7. If no recipients → returns `"No recipients found"` (`:514-516`).
-8. Sends a templated email: **closed alarm** template if `event.endDate` exists (subject `Closed Alarm (<Severity>): ...`), otherwise **created alarm** template (subject `New Alarm (<Severity>): ...`) (`:532-570`). Severity is `capitalizeSentence(event.severity)`. Times are formatted in the site timezone (default `America/New_York`).
-9. All errors are caught, logged, sent to Sentry, and the method returns the string `"Failed to process alarm notification"` (`:573-580`) — it does **not** re-throw.
+`processAlarm(dto)` (`webhook.service.ts:416-575`):
+1. Loads the event by `_id`, populating `site.managers` (emails) and `alarmConfig` (selecting only `name notifySupport`) (`:426`).
+2. Guards: throws `NotFoundException` if the event is missing or `!event.isAlarm` (`:428-430`); throws if `event.alarmGroup` is set ("Event is part of an alarm group") (`:432-434`).
+3. Loads candidate companies for the site (owner + access companies, de-duplicated) via `loadCompaniesForAlarmNotification` (`:63-110`).
+4. `collectAlarmNotificationRecipientIdSets` (`:115-194`) maps the **event severity** to a `NotificationEventType` and finds each company's matching, `isActive` notification setting; from it gathers email + in-app recipient user ids (site managers and/or explicit "other users") based on `emailNotifications` / `inAppNotifications` flags. **This is the link between alarm severity and who gets notified.**
+5. Creates in-app notifications for in-app recipients (`:474-490`).
+6. **`notifySupport` consumption:** reads `alarmConfig.notifySupport`; `buildSupportEmailRecipientsForAlarm` (`:196-202`) branches on `NODE_ENV`. In production it returns the support emails only when `notifySupport` is true; **outside production it returns them unconditionally, ignoring the flag entirely** (`:201`). Support addresses come from the `SUPPORT_EMAIL` config, falling back to `EMAIL.DENOWATTS_SUPPORT` (`email.service.ts:65-68`). This is the single place `AlarmConfig.notifySupport` is used.
+   **Note the ordering:** support recipients are unioned with the company-derived recipients *after* `collectAlarmNotificationRecipientIdSets` has run, and the `alarmEmailRecipients.length === 0` short-circuit (`:509-511`) is evaluated on the merged list — so `notifySupport` bypasses the company notification grid completely and can be the sole reason an email is sent.
+7. If no recipients → returns `"No recipients found"` (`:509-511`).
+8. Sends a templated email: **closed alarm** template if `event.endDate` exists (subject `Closed Alarm (<Severity>): ...`), otherwise **created alarm** template (subject `New Alarm (<Severity>): ...`) (`:528-566`). Severity is `capitalizeSentence(event.severity)`. Times are formatted in the site timezone (default `America/New_York`).
+9. All errors are caught, logged, sent to Sentry, and the method returns the string `"Failed to process alarm notification"` (`:568-573`) — it does **not** re-throw.
 
 **So the only `AlarmConfig` fields the runtime actually consumes are: `name` + `notifySupport` (webhook emails), `severity`/`order`/`name` (status aggregation), and all fields for display/editing in the UI.**
 
@@ -359,7 +475,7 @@ Triggered by `POST /webhooks/event/process-alarm` (`webhook.controller.ts:38-42`
 - **Suppression level constrained to 1–5** in the UI (`AlarmConfigTable.tsx:842-848`); schema allows any number.
 - **`condition` limited to two presets** in the UI: `None` or `irr>100 w/m2` (`AlarmConfigTable.tsx:964-967`).
 - **Status rollup = only open, non-deleted, non-archived, non-group alarm events**, scoped to the requesting user's company unless Super Admin overrides — `alarm-config.service.ts:100-167`.
-- **Support email only fires in production and only when `notifySupport` is true** — `webhook.service.ts:196-198`.
+- **Support email: production honours `notifySupport`; every other environment ignores it and always copies support** — `webhook.service.ts:196-202`.
 - New-alarm defaults from the UI: `target=CHANNEL_METRIC`, `effect=DISCONNECTED`, `severity=CRITICAL`, `channelPrefixes=['1.1.1']`, `operator=EQUAL`, `metric=''`, `threshold=0`, `suppressionLevel=1`, `notifySupport=false` (`GlobalAlarmPage.tsx:114-125`).
 
 ## Data touched {dev}
@@ -379,6 +495,10 @@ Triggered by `POST /webhooks/event/process-alarm` (`webhook.controller.ts:38-42`
 - **`isAcknowledgeable` is orphaned in the UI/API:** it exists on the schema (default `false`) and in the service test mock, but no GraphQL query/mutation selects it and the editor never renders it. Its value can only be set via a direct create/update mutation that includes it. Flagged for human review.
 - **`getAlarmStatusSummary` short-circuits to `[]`** for a non-super-admin with no company (`service.ts:82-83`) — the portfolio alarm table renders empty in that case rather than erroring.
 - **Route is not wrapped in `ProtectedRoute`.** Unlike sibling Super-Admin settings routes, `/settings/global-alarm-configuration` (`router.tsx:458-464`) has no route-level guard; access control is entirely in-page (`useGlobalAlarmAccess` → read-only table + hidden Add/Save buttons) and on the backend resolver. A non-super-admin can reach the page but cannot mutate.
+- **Every alarm email is BCC'd to a hardcoded personal address.** `processAlarm` sets `const bccMails = "asayeed@denowatts.com"` (`webhook.service.ts:512`) and passes it on both the created- and closed-alarm sends. It is not read from config and not environment-gated. Flagged for human review.
+- **`alarmConfig.name` is fetched for the alarm email but never used in it.** `findByIdForNotification` populates `alarmConfig` selecting `name notifySupport`, but `processAlarm` reads only `notifySupport`; the email subject and body are built from `event.title`, `event.severity` and the site name. The rule's name never reaches the recipient.
+- **`processAlarm` swallows every failure.** Missing event, non-alarm event, grouped event and any send error all end in the same caught branch returning the string `"Failed to process alarm notification"` (`:568-573`); nothing is re-thrown and nothing is retried, so the webhook caller sees a 200 with a failure string.
+- **Recipients are additionally filtered to `deletedAt: null` + `status: ACTIVE`** (`webhook.service.ts:459-460`) after the grid resolves them — a deactivated user named in `otherUsers` is dropped silently.
 - **`alarmConfig(_id)` and `deleteAlarmConfig` advertise non-null `AlarmConfig`** in the schema but the service can return `null` (not found) — a bad id resolves to `null` against a non-null field, which Apollo will surface as a GraphQL non-null violation error.
 
 ---

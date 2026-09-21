@@ -2,8 +2,8 @@
 title: Notification
 owner: alamin-nifty
 status: draft
-version: 4
-updated_at: 2026-08-11
+version: 5
+updated_at: 2026-09-07
 ---
 
 # Notification
@@ -63,6 +63,53 @@ A bell notification is always a per-recipient record fed by alarm dispatch or co
 
 ---
 
+## When a notification actually gets sent
+
+Each row on **Settings → Notification Management** has three parts.
+**All three have to be set, or nothing is sent.**
+
+| Part | Where it is | What it decides |
+|---|---|---|
+| Enabled | the toggle on the left | whether the row is used at all |
+| Site Managers, Other Users | under "Targeted Users" | **who** is told |
+| In App Notifications, Email | under "Delivery Method" | **how** they are told |
+
+The system first works out who should be told. It takes the site managers if
+Site Managers is ticked, plus anyone listed under Other Users. Then it looks at
+the Email and In App boxes to decide how to reach those people.
+
+**Ticking Email does not add anyone.** It does not send to every user in the
+company. It only decides how the people you already picked are told. So Email
+ticked with nobody picked sends nothing — and Site Managers ticked with neither
+Email nor In App also sends nothing.
+
+Every combination:
+
+| Enabled | Site Managers | Email | In App | Site managers get |
+|---|---|---|---|---|
+| on | ✓ | ✓ | — | an email |
+| on | ✓ | — | ✓ | a bell notification only, **no email** |
+| on | ✓ | ✓ | ✓ | both |
+| on | ✓ | — | — | **nothing** |
+| on | — | ✓ | ✓ | nothing — nobody was picked |
+| **off** | ✓ | ✓ | ✓ | **nothing** — the toggle overrides everything |
+
+Other Users works the same way as Site Managers. It adds people to the same
+list, and those people also need Email or In App ticked before they hear
+anything.
+
+Two emails ignore this screen completely:
+
+- **Denowatts support** is copied on alarm emails when the alarm rule itself has
+  "notify support" turned on. The boxes on this screen do not affect it.
+  See [[alarm-config]].
+- **Alarm emails check every company that can see the site**, not just this one.
+  So a site manager may still be emailed through another company's settings,
+  even when the row here is switched off. See [[alarm-config]], [[webhooks]] and
+  [[site]].
+
+---
+
 ## Per-user notification preferences
 
 Separate from the company-wide grid, every user has their **own** preference record, edited on their Profile page. Today it holds a single switch: whether they receive the **daily status report email**. The record is created automatically the first time the page is opened — nobody has to be provisioned. The same card also carries a **Send Report Now** button that sends the caller a copy on demand, bypassing the schedule and the opt-in flag entirely.
@@ -82,6 +129,7 @@ This is the only notification setting an ordinary user controls for themselves; 
 - **Your bell is yours alone** — notifications are always scoped to the signed-in user.
 - **Only active users are notified** — deactivated or deleted accounts are skipped everywhere.
 - **A rule must be switched on to fire** — inactive company notification rules are ignored.
+- **Choosing who and choosing how are two separate settings** — picking the people (site managers, other users) and picking the delivery (email, bell) are set independently, and both are needed. Picking people with no delivery method sends nothing. Picking a delivery method with nobody chosen also sends nothing. See *When a notification actually gets sent* above.
 - **There is exactly one system banner** — creating a second one just returns the existing one; the banner reappears for users only when it is updated.
 - **Delivery is best-effort** — if a notification or email fails to send, the action that triggered it (the comment, the event) still succeeds; failures are logged internally rather than shown to users.
 - **There is no SMS or push notification** — delivery is email and the in-app bell only, and the bell updates when the app refreshes it, not in real time.
@@ -533,9 +581,11 @@ Configured via `NotificationsPage` (site tab) — available only to Super Admins
 - **`readNotifications` ignores `read: true` documents:** both `updateMany` and `updateOne` filter on `read: false`, so already-read notifications are not re-touched — `denowatts-backend/src/notification/notification.service.ts:49–56`
 - **Site-level notification requires Enterprise plan or Super Admin:** `NotificationsPage` renders a "Notification requires Enterprise subscription plan" message for non-enterprise, non-superadmin users — `denowatts-portal/src/features/site/notifications/components/Notifications.tsx:150`
 - **Comment notifications only sent to @-mentioned users (in-app), but email goes to full comment cycle:** in-app `MENTION` notifications target only the explicitly mentioned user IDs; email goes to creator + all commenters + all mention users — `denowatts-backend/src/events/comments.service.ts:116–134`
-- **Alarm-level in-app `senderName` is hardcoded:** webhook alarm processing uses `senderName: "Trinity Trinity"` in notification metadata — this appears to be a placeholder left over from development — `denowatts-backend/src/webhooks/webhook.service.ts:499`
-- **Support email BCC is hardcoded:** `asayeed@denowatts.com` is always BCC'd on alarm notification emails in `WebhookService.processAlarm` — `denowatts-backend/src/webhooks/webhook.service.ts:517`
+- **Alarm-level in-app `senderName` is hardcoded:** webhook alarm processing uses `senderName: "Trinity Trinity"` in notification metadata — this appears to be a placeholder left over from development — `denowatts-backend/src/webhooks/webhook.service.ts:486`
+- **Support email BCC is hardcoded:** `asayeed@denowatts.com` is always BCC'd on alarm notification emails in `WebhookService.processAlarm` — `denowatts-backend/src/webhooks/webhook.service.ts:512`
 - **Support email delivery is environment-gated:** `buildSupportEmailRecipientsForAlarm` only respects `alarmConfig.notifySupport` in production; in non-production environments, support is always included — `denowatts-backend/src/webhooks/webhook.service.ts:196`
+- **Targeting and delivery are independent AND-gates:** the recipient list is assembled from `siteManagers` + `otherUsers` *first*, then copied into the email set only `if (emailNotifications)` and the in-app set only `if (inAppNotifications)`. A setting with recipients but neither channel flag, or channel flags but no recipients, produces an empty set and sends nothing — `denowatts-backend/src/webhooks/webhook.service.ts:158-186` (alarms) and `denowatts-backend/src/events/events.service.ts:198-235` (non-alarm events)
+- **`emailNotifications` is a channel switch, not an audience:** it never widens delivery beyond `siteManagers`/`otherUsers`; there is no code path that emails all users of a company — `denowatts-backend/src/webhooks/webhook.service.ts:177`, `denowatts-backend/src/events/events.service.ts:235`
 - **Company notification settings require `isActive: true` to fire:** `collectAlarmNotificationRecipientIdSets` skips any setting where `isActive` is `false` — `denowatts-backend/src/webhooks/webhook.service.ts:148`
 - **Mention syntax must be exact format:** the comment service only recognizes `@[Full Name](24-hex-char ObjectId)` format; other mention-like text is ignored — `denowatts-backend/src/events/comments.service.ts:44`
 - **System notification modal shown once per `updatedAt` change:** `localStorage.systemNotificationStatus` stores the last `updatedAt` seen; modal re-appears only when the admin saves a newer update — `denowatts-portal/src/App.tsx:125`
@@ -549,6 +599,8 @@ Configured via `NotificationsPage` (site tab) — available only to Super Admins
 - **No push / SMS:** the platform has no WebSocket subscription, push provider, or SMS integration for notifications. All real-time delivery is via email (SendGrid) or polling (`paginateNotifications` is polled on header mount with `refetch`).
 - **`createMany` is void:** callers that call `notificationService.createMany(...)` without `await` cannot know if the insert succeeded. Failures are invisible.
 - **Dual `@InjectModel` in NotificationService:** the service injects the same `Notification` model twice — once as `Model<Notification>` and once as `PaginateModel<NotificationDocument>`. This works because mongoose-paginate-v2 enriches the same model, but it's unusual and could cause confusion — `denowatts-backend/src/notification/notification.service.ts:15–17`
+- **A rule can be fully targeted and completely silent:** `isActive: true` with `siteManagers: true` but `emailNotifications: false` and `inAppNotifications: false` is a valid, saveable configuration that delivers nothing. The UI gives no warning, and the row looks configured. This is the most common support question about the grid — see *When a notification actually gets sent* — `denowatts-backend/src/webhooks/webhook.service.ts:177-186`
+- **Silent-configuration states, enumerated:** a company rule sends nothing when (a) `isActive: false`, (b) no delivery-method flag is set, (c) neither `siteManagers` nor `otherUsers` resolves to anyone, or (d) every resolved recipient is inactive or soft-deleted — the recipient query filters `status: ACTIVE, deletedAt: null` — `denowatts-backend/src/webhooks/webhook.service.ts:453-462`
 - **Site `notificationSettings.channels/delay` not consumed by dispatch paths:** the per-site alarm notification configuration (channel method and delay) does not appear to be read by `WebhookService` or `EventsService`. Only `Company.notificationSettings` drives who gets notified and how. The per-site structure may be intended for future use or for a separate job that processes `DAILY_REPORT` / delayed notifications.
 - **`EVENT_NOTIFICATION_CATEGORIES` does not include `CRITICAL`, `HIGH`, or `ROUTINE`:** those severity types are handled via the webhook alarm path, not the `EventsService.create` path — `denowatts-backend/src/events/constants/index.ts:25`
 - **`@Roles(UserType.SUPER_ADMIN)` on system notification mutations:** any non-super-admin attempting `createSystemNotification` or `updateSystemNotification` will be rejected by the roles guard — `denowatts-backend/src/notification/system-notification.resolver.ts:13,22`
