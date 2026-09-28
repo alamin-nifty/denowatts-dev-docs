@@ -89,6 +89,23 @@ function Icon({ name, className }) {
   )
 }
 
+function Account({ user, onSignOut }) {
+  const [busy, setBusy] = useState(false)
+  const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email
+  return (
+    <div className="account">
+      <div className="account-who">
+        <span className="account-name">{name}</span>
+        {name !== user.email && <span className="account-email">{user.email}</span>}
+      </div>
+      <button className="account-signout" disabled={busy}
+        onClick={async () => { setBusy(true); await onSignOut() }}>
+        {busy ? 'Signing out…' : 'Sign out'}
+      </button>
+    </div>
+  )
+}
+
 function Logo() {
   return (
     <div className="logo">
@@ -124,7 +141,7 @@ const audienceVisible = (aud, mode) => aud === 'all' || aud === mode
 // the chevron and whether the nav item acts as a toggle.
 const hasTree = (s, mode) => Boolean(s.doc) && tocVisible(s.doc.toc, mode).some((t) => t.level === 2)
 
-export default function DocsPortal() {
+export default function DocsPortal({ user, onSignOut }) {
   const [active, setActive] = useState(() => location.hash.replace(/^#\/?/, '') || null)
   // Which catalog card is expanded in "Pages in this section", and which
   // heading the reader is currently on (shared by the sidebar tree and the
@@ -364,6 +381,8 @@ export default function DocsPortal() {
             </div>
           ))}
         </nav>
+
+        {user && <Account user={user} onSignOut={onSignOut} />}
       </aside>
 
       <main className="main" ref={contentRef}>
