@@ -190,17 +190,24 @@ async function main() {
       out.repos.push({ slug: r.slug, base, head, commits: [], affected: [], uncited: [] }); continue
     }
 
-    let commits, files, truncated = false
+    let commits, files, truncated = false, totalCommits = null
     if (useLocal) {
       const cmp = localCompare(r, base)
       commits = cmp.commits
       files = cmp.files
+      totalCommits = commits.length
     } else {
       const cmp = await gh(`repos/${r.slug}/compare/${base}...${head}`)
       commits = cmp.commits.map((c) => ({ sha: c.sha.slice(0, 10), message: c.commit.message.split('\n')[0], author: c.commit.author?.name }))
       files = cmp.files || []
       truncated = files.length >= 300
+      // GitHub's compare API silently caps the `commits` array at 250 even though
+      // `total_commits`/`ahead_by` report the true count — verified 2026-09-22
+      // (denowatts-portal: total_commits 598, commits.length 250). Without this
+      // check the report understates drift by half or more with no indication.
+      totalCommits = cmp.total_commits ?? cmp.ahead_by ?? commits.length
     }
+    const commitsTruncated = totalCommits > commits.length
 
     const affected = []
     const uncited = []
@@ -222,10 +229,19 @@ async function main() {
         })
       }
     }
-    out.repos.push({ slug: r.slug, base: String(base).slice(0, 10), head: head.slice(0, 10), commits, affected, uncited, truncated })
+    out.repos.push({ slug: r.slug, base: String(base).slice(0, 10), head: head.slice(0, 10), commits, totalCommits, commitsTruncated, affected, uncited, truncated })
   }
 
-  if (flag('--json')) { console.log(JSON.stringify(out, null, 2)); process.exit(0) }
+  if (flag('--json')) {
+    // Write + wait for the callback before exiting — `console.log(...); process.exit(0)`
+    // truncates silently at ~64KB whenever stdout is a pipe (not a TTY or a file redirect):
+    // process.exit() can fire before Node finishes flushing an async pipe write. Verified
+    // 2026-09-28 — piping this repo's real output (410KB) cut to exactly 65536 bytes.
+    // This affects any consumer that pipes/captures stdout, including the MCP server's
+    // check_drift tool (`execFileSync`) and any shell pipeline.
+    process.stdout.write(JSON.stringify(out, null, 2) + '\n', () => process.exit(0))
+    return
+  }
 
   // ---------- markdown report ----------
   let md = `# Doc drift report — ${out.generatedAt.slice(0, 10)} (${out.mode})\n\n`
@@ -235,7 +251,8 @@ async function main() {
     if (r.error) { md += `> ${r.error}\n\n`; continue }
     if (!r.commits.length) { md += `No changes since last review (\`${String(r.base).slice(0, 10)}\`).\n\n`; continue }
     any = true
-    md += `\`${r.base}\` → \`${r.head}\` — **${r.commits.length} commit(s)**\n\n`
+    md += `\`${r.base}\` → \`${r.head}\` — **${r.commits.length} commit(s)**`
+    md += r.commitsTruncated ? ` ⚠️ **of ${r.totalCommits} total — GitHub API capped the list, this report is incomplete**\n\n` : '\n\n'
     for (const c of r.commits.slice(0, 30)) md += `- \`${c.sha}\` ${c.message}\n`
     if (r.commits.length > 30) md += `- …and ${r.commits.length - 30} more\n`
     md += '\n'
