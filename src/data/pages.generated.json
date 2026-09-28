@@ -76,19 +76,6 @@
     "flow": "flows/portfolio.md"
   },
   {
-    "name": "Portfolio Status",
-    "route": "/status/portfolio",
-    "module": "Portfolio",
-    "purpose": "Detailed table view of all sites with service status, connection status, event counts, and setup progress. Supports search, filtering, and site-note editing. Auto-refreshes every minute.",
-    "actions": [
-      "View fleet details table",
-      "Search sites by name",
-      "Filter by status",
-      "Add or edit site notes"
-    ],
-    "flow": "flows/portfolio.md"
-  },
-  {
     "name": "Energy KPIs",
     "route": "/portfolio/energy-kpis",
     "module": "Portfolio",

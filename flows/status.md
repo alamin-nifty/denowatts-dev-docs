@@ -2,8 +2,8 @@
 title: Status
 owner: alamin-nifty
 status: draft
-version: 4
-updated_at: 2026-06-10
+version: 5
+updated_at: 2026-09-22
 ---
 
 # Status
@@ -99,7 +99,7 @@ The three dashboard views are scoped to your company — you only see your own s
 
 ## Entry points & routes {dev}
 
-Header "Status" nav → routes under `/status/*`, all wrapped in `CompanyRequiredRoute` (`router.tsx:227-244`). A header toolbar (`StatusSettings.tsx`) provides the Portfolio/Site/Channel toggle, site/channel pickers, search, and a manual Refresh (dispatches `refreshTrigger: Date.now()`). System Status is at `/status/system` → [[status-logs]].
+Header "Status" nav → routes under `/status/*` (file-based routes: `denowatts-portal/src/routes/_dashboard/status/`), the whole subtree gated by the `requireCompany` guard on the layout route — `denowatts-portal/src/routes/_dashboard/status/route.tsx:5`, guard defined `denowatts-portal/src/common/utils/authGuards.ts:95-102`. (Older drafts of this doc cited a `router.tsx`-based `CompanyRequiredRoute` component; routing has since moved to TanStack Router's file-based routes, and that component no longer exists.) A header toolbar (`StatusSettings.tsx`) provides the Portfolio/Site/Channel toggle, site/channel pickers, search, and a manual Refresh (dispatches `refreshTrigger: Date.now()`). System Status is at `/status/system` → [[status-logs]].
 
 ---
 

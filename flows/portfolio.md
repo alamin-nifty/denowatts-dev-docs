@@ -2,8 +2,8 @@
 title: Portfolio
 owner: alamin-nifty
 status: draft
-version: 4
-updated_at: 2026-06-10
+version: 5
+updated_at: 2026-09-22
 ---
 
 # Portfolio
@@ -117,9 +117,10 @@ If your account has no company assigned, the portfolio shows an **empty** fleet 
 
 ## Entry points & routes {dev}
 
-- `/portfolio` (map landing) plus analytics sub-routes `/portfolio/energy-kpis`, `/portfolio/triage`, `/portfolio/irradiation` — `denowatts-portal/src/router.tsx:92-125`.
-- The detailed list view lives at `/status/portfolio` — `denowatts-portal/src/router.tsx:235-236`.
-- The whole `/portfolio` subtree is wrapped in `CompanyRequiredRoute` — `denowatts-portal/src/router.tsx:94`.
+- Sidebar nav item "Portfolio" → `/portfolio` (map landing) — `denowatts-portal/src/common/components/AppSidebar/AppSidebar.tsx:480-489`. File-based route: `denowatts-portal/src/routes/_dashboard/portfolio/index.tsx`.
+- Analytics sub-routes `/portfolio/energy-kpis`, `/portfolio/triage`, `/portfolio/irradiation` — `denowatts-portal/src/routes/_dashboard/portfolio/{energy-kpis,triage,irradiation}.tsx`.
+- The whole `/portfolio` subtree requires a company via the `requireCompany` guard on the layout route — `denowatts-portal/src/routes/_dashboard/portfolio/route.tsx:5`, guard defined `denowatts-portal/src/common/utils/authGuards.ts:95-102`. (Older drafts of this doc cited a `router.tsx`-based `CompanyRequiredRoute` component; routing has since moved to TanStack Router's file-based routes under `src/routes/`, and that component no longer exists.)
+- The detailed list view lives at `/status/portfolio` — a **different page**, documented in [[status]], not here. See "PortfolioStatusView" below.
 
 ---
 
@@ -142,7 +143,7 @@ None. The portfolio is read-only; all writes (notes, acknowledging alarms, ticke
 
 ---
 
-## Frontend components — `denowatts-portal/src/pages/dashboard/portfolio/` {dev}
+## Frontend components — `denowatts-portal/src/features/portfolio/` {dev}
 
 ### PortfolioPage — `PortfolioPage.tsx` {dev}
 The landing container. Reads `sitesFilter`/`theme` from Redux (`:29,73-74`), memoizes the three-part query variables (`:33-40`), fires `PORTFOLIO_PAGE_DATA` with `fetchPolicy: 'no-cache'` + `notifyOnNetworkStatusChange: true` (`:42-49`), and splits the response into `sites`/`portfolioStatusSummary`/`alarmStatusSummary` (null-filtered, `:51-71`). Holds the two mutually-exclusive filter states `activeMapFilter`/`activeOpenAlarmFilter` (`:76-79`); setting one clears the other (`:116,134`). `filteredSites` (`:137-220`) is the single source the map renders from:
@@ -169,8 +170,8 @@ Shared Tailwind class constants and the `GOOGLE_MAPS_DARK_STYLES` array for dark
 ### Analytics sub-pages — `energy-kpis/EnergyKPIsPage.tsx`, `triage/TriagePage.tsx`, `irradiation/IrradiationPage.tsx` {dev}
 **Static image placeholders.** Each renders one `<img>` pointing at an external S3 (`dropovercl.s3.amazonaws.com`) screenshot — no query, no Redux, no charting (`:1-13` each). As written they **fetch nothing**. Real fleet charting lives in [[analytics]].
 
-### PortfolioStatusView / `/status/portfolio` — outside this folder {dev}
-The detailed list the summary links to lives at `denowatts-portal/src/features/status/portfolio-status/PortfolioStatusPage.tsx` (route `router.tsx:235-236`). UNCLEAR: its exact query/poll interval not re-read this pass; an earlier draft claimed `GET_SITES` with `showNotes: true` + `pollInterval: 60000` — verify before relying. See [[status]].
+### PortfolioStatusView / `/status/portfolio` — a separate page, outside this feature folder {dev}
+Despite the shared name, this is a **different page** from everything above: a different sidebar entry (Status → Portfolio, not the top-level Portfolio nav item), a different route tree (`/status/portfolio`, under the Status layout), and a different component folder — `denowatts-portal/src/features/status/portfolio-status/PortfolioStatusPage.tsx` → `PortfolioStatusView.tsx` (route file `denowatts-portal/src/routes/_dashboard/status/portfolio.tsx`). It's the detailed per-site table the summary tables above link out to. Confirmed: `GET_SITES` query with `{ ...sitesFilter, showNotes: true }`, `pollInterval: 60000`. Fully documented — component internals, columns, and query — in [[status]] under "Portfolio Status". Don't duplicate that documentation here; this doc only owns `/portfolio` (map landing) and its analytics sub-routes.
 
 ---
 
