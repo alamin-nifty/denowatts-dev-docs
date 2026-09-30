@@ -2,7 +2,7 @@
 title: Question log
 owner: alamin-nifty
 status: living
-updated_at: 2026-09-18
+updated_at: 2026-09-30
 ---
 
 # Question log
@@ -142,6 +142,37 @@ it) · `predicted` (nobody has asked yet, but the same gap is visible)
   but not what breaks it. Here the "what produces nothing" gap was a missing
   id-validation contract between frontend and backend, not a settings
   combination.
+
+### Q6 — Quote questions support will get after the September 2026 quote redesign
+- **Asked:** not yet — logged 2026-09-30 while refreshing [quote.md](quote.md)
+  (v3 → v4) against the redesigned code. The v3 doc was written before three
+  quote types, the one-page form, fixed shipping and the setup-fee waiver
+  existed, so it would have answered each of these wrongly.
+- **Questions this refresh now answers:**
+  1. "We shipped the add-on quote — why didn't the customer's plan get
+     longer?" → Add-on quotes change nothing on the sites when shipped.
+     *The three kinds of quote*, *What shipping switches on*.
+  2. "Why is the setup fee $0 on this quote but not that one?" → waived only
+     on a 5-year term. *How service level and contract length work together*.
+  3. "Where do I type a discount / change shipping?" → you can't; shipping is
+     always $100. *How the price is worked out*.
+  4. "I ticked VPN on the multi-site grid, why isn't it on the quote?" →
+     priced but not saved. *What produces nothing*.
+  5. "The customer signed but it still says Waiting for Signing." → the
+     browser must report the signature; closing the tab early leaves it stuck.
+     *What produces nothing*, [e-signature.md](e-signature.md).
+  6. "I removed a site from the renewal, why is the total the same?" →
+     edits never remove sites. *What produces nothing*.
+- **Status:** `predicted` — each answered in [quote.md](quote.md). Promote to
+  a real entry when someone actually asks.
+- **Open items for a human (from the same refresh):** customers can re-price
+  a renewal/add-on quote after signing; renewal plan type is taken from the
+  first site for all sites; renewal pre-fill checks `BASIC` for the product
+  but `ESSENTIAL_WEATHER` for the tier/term. See quote.md *Edge cases &
+  gotchas*.
+- **Root cause:** doc drift, not a missing section — a large feature rewrite
+  landed (8 backend + ~20 portal commits, 2026-09-01 → 09-29) with no doc
+  update. The drift detector flagged it; nothing consumed the flag.
 
 ---
 

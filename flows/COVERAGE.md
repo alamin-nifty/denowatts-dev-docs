@@ -42,7 +42,7 @@ Cross-cutting items flagged during all passes live in [REVIEW-FINDINGS.md](./REV
 | Assets | `src/assets` | [assets.md](./assets.md) | 🟢 two-mode · v2 |
 | Site Builder | `src/site-builder` | [site-builder.md](./site-builder.md) | 🟢 two-mode · v2 |
 | Storage (Denobox) | `src/storage` | [storage.md](./storage.md) | 🟢 two-mode · v2 |
-| Quotes | `src/quote` | [quote.md](./quote.md) | 🟢 two-mode · v2 |
+| Quotes | `src/quote` | [quote.md](./quote.md) | 🟢 two-mode · v4 (2026-09-30) |
 | Companies | `src/companies` | [companies.md](./companies.md) | 🟢 two-mode · v2 |
 | Users | `src/users` | [users.md](./users.md) | 🟢 two-mode · v2 |
 | Audit Trail | `src/audit-trail` | [audit-trail.md](./audit-trail.md) | 🟢 two-mode · v1 |

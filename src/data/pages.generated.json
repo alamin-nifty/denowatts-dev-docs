@@ -370,17 +370,16 @@
     "name": "Quotation Management",
     "route": "/settings/quote-management",
     "module": "Quote",
-    "purpose": "Paginated list of all quotes with summary stats (total count, total amount, average amount). Default filter excludes WITHDRAWN and DELETED. Supports server-side search, status filter, and sort by AC nameplate, ship date, create date, or expiry. SUPER_ADMIN can export to XLSX and delete quotes.",
+    "purpose": "List of quotes you can see, with total count, total amount and average amount. Filters for Status (hides Shipped and Withdrawn by default), Quote type (New site / Renewal / Add-on) and the header company. Expiration date is 90 days after the last change. Super admins can delete and export the current page to Excel.",
     "actions": [
       "View quote list",
       "Filter by status",
-      "Sort by column",
-      "Search by site name / requestor / company / reference ID",
+      "Filter by quote type",
+      "Search by project name / project owner / requestor / company / reference number",
       "Create quote",
-      "Bulk create quotes",
-      "Edit quote",
+      "Edit quote (opens the right flow for its type)",
       "Delete quote (SUPER_ADMIN)",
-      "Export to XLSX (SUPER_ADMIN)"
+      "Export current page to XLSX (SUPER_ADMIN)"
     ],
     "flow": "flows/quote.md"
   },
@@ -388,28 +387,25 @@
     "name": "Create Quote",
     "route": "/settings/quote-management/create",
     "module": "Quote",
-    "purpose": "5-step wizard for creating a single quote: (1) Project - owner and site, (2) Location - address, (3) Details - mounting/module/data acquisition, (4) Services - tier/term/options with live QuickBooks product pricing, (5) Review - editable product table with quantities and discounts.",
+    "purpose": "Chooser with four starting points: New Site, Multiple Sites (new sites), Add Products (add-on for existing sites, no subscription change) and Renew Sites (renewal for sites expiring within 90 days).",
     "actions": [
-      "Select owner",
-      "Toggle existing/new site",
-      "Enter site details",
-      "Select service tier and term",
-      "View auto-calculated product quantities",
-      "Adjust quantities and discounts",
-      "Submit quote"
+      "Start a New Site quote",
+      "Start a Multiple Sites quote",
+      "Start an Add Products quote",
+      "Start a Renew Sites quote"
     ],
     "flow": "flows/quote.md"
   },
   {
-    "name": "Edit Quote",
+    "name": "Quote",
     "route": "/settings/quote-management/:id",
     "module": "Quote",
-    "purpose": "Edit an existing quote using the same 5-step wizard. Pre-populates all fields from the stored quote. For group (renewal) quotes, navigates to the renewal edit page instead.",
+    "purpose": "Two tabs. Quote: the new-site form in edit mode, super admins only, while Pending or Requested for Signing. Shipping: billing and shipping details plus Purchase Order upload; Confirm Order creates the QuickBooks invoice and moves the quote to Ordered. Shows a blank page for Withdrawn quotes.",
     "actions": [
-      "Edit quote details",
-      "Update products",
-      "Change status to WITHDRAWN (non-admin)",
-      "Change any status (SUPER_ADMIN)"
+      "Edit quote (SUPER_ADMIN, before signing)",
+      "Enter billing and shipping info",
+      "Upload purchase order",
+      "Confirm Order"
     ],
     "flow": "flows/quote.md"
   },
@@ -417,49 +413,44 @@
     "name": "Quote Document View",
     "route": "/settings/quote-management/:id/quote-view",
     "module": "Quote",
-    "purpose": "Rendered quote document showing cover page, introduction, product table, and terms. For signed quotes, shows DocuSeal signing URL. ADMIN/USER can initiate the DocuSeal signing workflow from here.",
+    "purpose": "The quote document: cover page, products table with subtotals, terms and signature. Buttons depend on status and role: Request for Signing, Edit and Withdraw (super admin); Accept and Sign and Withdraw (customer); Confirm Shipment / Cancel Shipment (super admin); Go to Shipping (customer).",
     "actions": [
       "View quote document",
-      "Initiate DocuSeal signing (ADMIN/USER)",
-      "View group quote child sites table"
+      "Request for Signing (SUPER_ADMIN)",
+      "Accept and Sign (ADMIN/USER)",
+      "Withdraw",
+      "Confirm Shipment / Cancel Shipment (SUPER_ADMIN)",
+      "Go to Shipping"
     ],
     "flow": "flows/quote.md"
   },
   {
-    "name": "Bulk Create Quotes",
+    "name": "Bulk Create Quotes (redirect)",
     "route": "/settings/quote-management/bulk-create",
     "module": "Quote",
-    "purpose": "Upload an XLSX file to bulk-create multiple quotes in one operation. Products are auto-calculated per site configuration (no manual product list required). All quotes share the same owner. Fails entirely if any row is invalid.",
+    "purpose": "Old address; redirects to Quote for Multiple Sites (/settings/quote-management/create/multi-site).",
     "actions": [
-      "Upload XLSX template",
-      "Validate rows",
-      "Bulk create quotes"
+      "Redirect to Multiple Sites"
     ],
     "flow": "flows/quote.md"
   },
   {
-    "name": "Quote Order",
+    "name": "Quote Order (unused)",
     "route": "/settings/quote-management/order/:dealId",
     "module": "Quote",
-    "purpose": "Order form for a signed quote. Collects billing and shipping contact info, confirmed ship date, and order documents. On submit, creates a QuickBooks invoice and transitions the quote to ORDERED status. Sends order confirmation email to quote owner and QB customer.",
+    "purpose": "Old order route. Renders an empty billing form that ignores the id in the address, so it cannot place an order. Use the Shipping tab on the quote instead.",
     "actions": [
-      "Enter billing info",
-      "Enter shipping info",
-      "Upload order documents",
-      "Place order (creates QB invoice)"
+      "None (dead route)"
     ],
     "flow": "flows/quote.md"
   },
   {
-    "name": "Renew Quote",
+    "name": "Renew Quote (redirect)",
     "route": "/settings/quote-management/renew",
     "module": "Quote",
-    "purpose": "Create a new renewal group quote for one or more existing sites. Pre-populates products based on installed Deno sensor types and current subscription plan. Creates a group parent quote plus one child quote per site.",
+    "purpose": "Old address; redirects to Renew Sites (/settings/quote-management/create/renew).",
     "actions": [
-      "Select sites for renewal",
-      "Adjust renewal products and quantities",
-      "Set next renewal date",
-      "Submit renewal quote"
+      "Redirect to Renew Sites"
     ],
     "flow": "flows/quote.md"
   },
@@ -467,12 +458,11 @@
     "name": "Edit Renewal Quote",
     "route": "/settings/quote-management/renew/:id",
     "module": "Quote",
-    "purpose": "Edit an existing renewal group quote. Upserts child quotes per site, recalculates group totals from all children. Sends update notification email.",
+    "purpose": "Edit an existing renewal quote in the Renew Sites flow. Edited sites are re-priced and reset to Pending; sites removed from the list are not removed from the quote. No step check: a signed or ordered renewal can still be edited.",
     "actions": [
-      "Edit renewal products per site",
-      "Add renewal add-on products",
-      "Update next renewal date",
-      "Save renewal quote"
+      "Edit products per site",
+      "Change Renew Date",
+      "Update renewal quote"
     ],
     "flow": "flows/quote.md"
   },
@@ -1038,5 +1028,64 @@
       "Delete own account (sets status to Deleted and signs out)"
     ],
     "flow": "flows/notification.md"
+  },
+  {
+    "name": "Quote for a New Site",
+    "route": "/settings/quote-management/create/new-site",
+    "module": "Quote",
+    "purpose": "One-page form (Project, Location, Site Details, Services, Products) for one new site. Products are picked from the answers and priced live from QuickBooks; the Order Summary re-prices as you answer. Shipping fixed at $100; setup fee waived on a 5-year term.",
+    "actions": [
+      "Pick customer (SUPER_ADMIN)",
+      "Enter project, location and site details",
+      "Choose service level and contract length",
+      "Choose connectivity and add-ons",
+      "Adjust hardware quantities",
+      "Set Custom Service price (SUPER_ADMIN)",
+      "Submit quote"
+    ],
+    "flow": "flows/quote.md"
+  },
+  {
+    "name": "Quote for Multiple Sites",
+    "route": "/settings/quote-management/create/multi-site",
+    "module": "Quote",
+    "purpose": "Grid or spreadsheet import where every row becomes its own new-site quote for one owner. All-or-nothing: one bad row blocks every quote. VPN and outdoor enclosure columns are priced but not saved.",
+    "actions": [
+      "Upload Excel file",
+      "Download template",
+      "Add quote manually",
+      "Pick customer/owner (SUPER_ADMIN)",
+      "Create quotes"
+    ],
+    "flow": "flows/quote.md"
+  },
+  {
+    "name": "Add Products",
+    "route": "/settings/quote-management/create/add-products",
+    "module": "Quote",
+    "purpose": "Add-on quote for existing sites: pick sites, then add products to each (by hand or with Build from answers). One quote covers all picked sites. Does not extend any subscription, and marking it Shipped changes nothing on the sites. With ?id= it edits an existing add-on quote.",
+    "actions": [
+      "Pick owner (SUPER_ADMIN)",
+      "Pick sites",
+      "Add products per site",
+      "Build from answers",
+      "Create or update add-on quote"
+    ],
+    "flow": "flows/quote.md"
+  },
+  {
+    "name": "Renew Sites",
+    "route": "/settings/quote-management/create/renew",
+    "module": "Quote",
+    "purpose": "Renewal quote for sites whose plan has expired or ends within 90 days. Products are pre-filled from installed Deno sensors and the current service; recurring lines are charged from the plan end date to the chosen Renew Date. When shipped, each site's plan runs from that day to the Renew Date.",
+    "actions": [
+      "Filter All / Expired / Expiring soon",
+      "Pick sites",
+      "Pick owner and Renew Date in the header",
+      "Adjust products per site",
+      "Build from answers",
+      "Create renewal quote"
+    ],
+    "flow": "flows/quote.md"
   }
 ]

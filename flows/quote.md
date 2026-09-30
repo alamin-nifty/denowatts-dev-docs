@@ -2,921 +2,565 @@
 title: Quote / Proposal
 owner: alamin-nifty
 status: draft
-version: 3
-updated_at: 2026-06-10
+version: 4
+updated_at: 2026-09-30
 ---
 
 # Quote / Proposal
 
-A **quote** is a formal price proposal for outfitting a solar installation with Denowatts monitoring — the reference sensors, the on-site gateway hardware, optional extras (cellular connectivity, outdoor enclosure, capacity testing, VPN), and a multi-year monitoring subscription. The Quote module is the sales and procurement workflow around that proposal: building it (singly or in bulk), pricing it from the live product catalogue, walking it through review and e-signature, converting it into an order and invoice, and ultimately activating the site's subscription when hardware ships. It also handles subscription **renewals** for existing sites, including bundling many sites into one signable group quote.
+**What it does (business):** A quote is a priced offer for Denowatts monitoring. It lists the sensors, the gateway hardware, any extras, and the monitoring subscription. It gets signed, turned into an order, and shipped. Shipping it switches on the site's subscription.
 
-> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains the quote lifecycle, how pricing works, renewals and group quotes, and who can do what. *Developer* adds the full GraphQL surface, service internals, schemas and enums, the SKU catalogue, frontend wizard details, file references, and a terminology primer.
+**Entry point(s):** Settings → **Quotation** in the left menu (`/settings/quote-management`). The **Renew** button on Service Management also opens the renewal flow.
+
+> **Reading this doc:** use the **Business / Developer** switch at the top. *Business* explains the kinds of quote, the steps a quote goes through, how the price is worked out, and who can do what. *Developer* adds the GraphQL operations, service internals, schema, SKU list, and file references.
+
+> **What changed in September 2026.** The quote screens were rebuilt. There are now **three kinds of quote** (New site, Renewal, Add-on). The old 5-step wizard is gone: a new-site quote is **one page**. Shipping is a **fixed $100** on every quote. **Discounts can no longer be typed in.** The setup fee is waived automatically on a 5-year term. If you learned the old screens, read "Where to find it" and "How the price is worked out" again.
 
 ---
 
 ## Why this matters
 
-The quote is where a prospect becomes a monitored site. The numbers on it drive the invoice, the hardware shipment, and the length of the monitoring subscription — so a mispriced or mis-specified quote follows the site for years. The module automates the error-prone parts: it works out which hardware and service products a site needs from a handful of facts (capacity, mounting, module type, service tier), pulls live prices from the accounting system, and enforces a one-way lifecycle so a signed quote can't quietly be edited backwards.
+The quote is where a prospect becomes a monitored site. The numbers on it become the invoice. The hardware on it is what ships. The term on it decides when the subscription ends. A wrong quote follows the site for years.
+
+The portal does the error-prone parts for you. It picks the products from a few answers about the site. It takes live prices from QuickBooks. When the customer signs, it creates their company and site if they are new.
 
 ---
 
-## How the data flows
+## Where to find it
 
-```mermaid
-flowchart TD
-    SALES["Salesperson creates quote<br/>(single, bulk, or renewal)"] --> PRICE["Pricing auto-computed<br/>from live catalogue"]
-    PRICE --> PEND["Pending<br/>(in review)"]
-    PEND --> REQ["Requested<br/>for signing"]
-    REQ -.->|"customer signs"| ESIGN["External e-signature<br/>service"]
-    ESIGN -.-> SIGNED["Signed"]
-    SIGNED --> ORDERED["Ordered<br/>(invoice raised)"]
-    ORDERED --> SHIPPED["Shipped<br/>(subscription activated)"]
-    SIGNED --> NEXT["Feeds handover<br/>and future renewals"]
-```
+Open **Settings → Quotation**. The list shows every quote you are allowed to see. Click **Create Quote** to start a new one. You then pick one of four starting points:
 
-Statuses only ever move forward. The signing document is built by the platform and signed through an external provider, but the ceremony is **embedded in the portal** and completion is reported back by the customer's browser — see [[e-signature]].
+| Card on screen | Group | Use it when | Makes a quote of type |
+|---|---|---|---|
+| **New Site** | New sites | One project that is not in the portal yet | New site |
+| **Multiple Sites** | New sites | Several new projects at once, from a spreadsheet or typed into a grid. Each row becomes its own quote. | New site (one per row) |
+| **Add Products** | Existing sites | A customer wants more hardware or services for sites they already have. **This does not extend their subscription.** | Add-on |
+| **Renew Sites** | Existing sites | A site's plan has ended, or ends within 90 days | Renewal |
+
+The **Add Products** and **Renew Sites** cards each make **one quote that covers every site you pick**. The customer signs once for all of them.
 
 ---
 
-## The quote lifecycle
+## The three kinds of quote
 
-A quote moves forward through fixed stages and never backwards:
-
-1. **Pending** — created and awaiting admin review (customers see this as "Quote in Review").
-2. **Requested for signing** — approved; the owner is emailed and can open the e-signature flow ("Waiting for Signing").
-3. **Signed** — the e-signature is complete ("Awaiting Order" until billing details arrive). This step also **creates the Company and the Site** when the quote was for a customer or installation the platform did not already know about, files the signed PDF into the site's Denobox, and emails both signer and owner — see [[e-signature]].
-4. **Ordered** — billing and shipping details are confirmed; an invoice is raised in the accounting system and a confirmation email goes out.
-5. **Shipped** — hardware is on its way. For a brand-new site, this is the moment the monitoring subscription is switched on (start date today; end date is the quote's agreed renewal date when one was set, otherwise today plus the subscribed years).
-
-A quote can also be **withdrawn** (the one status change a customer can make themselves) or **deleted** (soft-delete, super-admin only — the record is kept but hidden). Quotes effectively expire 90 days after their last update; the expiry date shown in the UI is computed, not stored.
-
----
-
-## What goes into a quote — pricing
-
-- The platform derives the **product list automatically** from the site's profile: capacity (MW AC), mounting types, module types (monofacial/bifacial), chosen service tier, subscription years, and add-ons (cell plan, outdoor enclosure, capacity testing, VPN, data-acquisition source).
-- **Quantities scale with site size** — bigger sites get more sensors and gateways, in defined capacity bands (under 1 MW up to 100 MW+).
-- **Prices are live**, fetched from the accounting/product system at quoting time rather than stored in the platform.
-- Totals are split into **hardware**, **one-time services**, **recurring services over the full term** (with the implied annual rate shown), plus shipping; all amounts are rounded to whole currency units.
-- One built-in promotion exists: the **Expert Optimization Guide is free with a 5-year subscription**.
-- Super-admins can add a **custom line item** with their own name, description, and price.
-- Quotes can carry attached documents; when a quote becomes an order, the order documents are also filed into the site's Denobox Plans folder. See [[storage]].
+| | New site | Renewal | Add-on |
+|---|---|---|---|
+| For | A project not in the portal yet | Existing sites whose plan is ending | Existing sites that need more |
+| Sites per quote | One | One or more | One or more |
+| Products come from | Your answers about the site | What the site already has installed, plus anything you add | Only what you add |
+| Customer signs | Once | Once for all sites | Once for all sites |
+| Shipping | $100 | $100 for the whole quote | $100 for the whole quote |
+| Creates the company and site when signed | Yes, if they do not exist yet | No, the sites already exist | No |
+| When marked **Shipped** | Starts the subscription and sets up the site | Starts a new subscription period on every site | **Changes nothing on the sites** |
+| Sets a renewal date | No | Yes: **Renew Date** in the header | No |
 
 ---
 
-## Renewals and group quotes
+## The steps a quote goes through
 
-- For existing sites coming up on the end of their subscription, the renewal flow pre-fills a quote from what the site actually has — detecting which sensor types are installed and matching the service tier to the current plan.
-- Several sites can be renewed together as a **group quote**: one parent document that is signed once, with one child quote per site underneath. The parent carries the combined totals (and the summed capacity); the products live on the children.
-- Renewals always have **$0 shipping** (no new hardware by default), and a catalogue of add-on products (extra gateway, modem, data plan…) can be added manually.
-- One known blind spot: renewal pre-fill always assumes monofacial modules — bifacial detection for renewals is not implemented, so operators must adjust by hand where needed.
+A quote moves through these steps. Super admins and customers see different names for the same step.
+
+| Step | Super admin sees | Customer sees | What moves it on | What happens |
+|---|---|---|---|---|
+| 1 | Pending | **Quote in Review** | A super admin clicks **Request for Signing** | The owner gets a "Quote approved for signing" email. |
+| 2 | Requested for Signing / Signature Pending | **Waiting for Signing** | The customer clicks **Accept and Sign** and signs | See [[e-signature]]. |
+| 3 | Signed | **Awaiting Order** (Complete Shipping) | The customer fills in the **Shipping** tab and clicks **Confirm Order** | On signing: the company and site are created if new, the signed PDF is filed in the site's Denobox, and signer and owner get an email. |
+| 4 | Ordered | Ordered | A super admin clicks **Confirm Shipment** | A QuickBooks invoice is created, and the owner and the invoice contact get an order confirmation email. |
+| 5 | Shipped | Shipped | — | The subscription starts (see "What shipping switches on"). |
+
+Two other endings:
+
+- **Withdrawn.** Anyone who can see the quote can click **Withdraw** while it is Pending or Waiting for Signing. The owner gets an email. **This is the only step a customer can take on their own.**
+- **Deleted.** Only a super admin can delete, from the list. The quote is hidden, not erased.
+
+A super admin can also click **Cancel Shipment** to move a quote from Shipped back to Ordered. For a new-site quote, this also turns the site's subscription back off.
+
+**The steps do not have to be taken in order.** The server only refuses to move a quote *backwards*. A super admin could, in principle, move a quote straight from Pending to Shipped, skipping the signature. The screens do not offer that button, but the server allows it.
+
+---
+
+## How the price is worked out
+
+**For a new-site quote, you do not pick products. You answer questions, and the portal picks them.** The **Order Summary** panel on the right re-prices as you answer.
+
+The questions are: AC capacity (in MW), mounting type, module type, service level, contract length, data acquisition source, cellular, VPN, capacity test, and outdoor enclosure.
+
+**Prices always come from QuickBooks.** They are not stored in the portal, so a price change in QuickBooks shows up on the next quote. A quote that is already saved keeps the prices it was saved with.
+
+The total has four parts:
+
+- **Hardware:** sensors, gateway, modem, enclosure.
+- **Recurring services:** the monitoring subscription and data plan, for the whole term. The panel also shows the **Annual service** cost (per year).
+- **One-time services:** setup fee, capacity test, OPC setup.
+- **Shipping:** always **$100**. It cannot be changed.
+
+All amounts are rounded to whole dollars.
+
+### Which products your answers add
+
+| If you answer | The quote gets |
+|---|---|
+| Anything (every quote) | A Deno gateway and a horizontal sensor |
+| Module type includes **Monofacial** | POA Deno sensors |
+| Module type includes **Bifacial** | POA + rear-POA Deno sensors |
+| Mounting includes **Ground (Tracker)** | A tracker antenna adder for each sensor |
+| Service level **Essential Weather** | Essential Weather subscription |
+| Service level **Energy Accounting** | Energy Accounting subscription **and** the setup fee |
+| Capacity test ticked | Testing package |
+| Cellular = Yes | A cell modem and a data plan (1 GB or 10 GB a month) |
+| VPN = Yes | Remote-access VPN |
+| Outdoor enclosure ticked | One outdoor enclosure |
+| Data acquisition **Modbus TCP and RTU** | A DenoHub for each gateway |
+| Data acquisition **OPC Only** | OPC client setup |
+| Data acquisition **Modbus TCP Only** | Nothing extra |
+
+### How many sensors and gateways
+
+The count depends on the site's AC capacity:
+
+| AC capacity | Deno sensors | Gateways (and modems, DenoHubs) |
+|---|---|---|
+| Under 1 MW | 1 | 1 |
+| 1 to under 10 MW | 2 | 1 |
+| 10 to under 25 MW | 4 | 2 |
+| 25 to under 100 MW | 6 | 3 |
+| 100 MW and up | 8 | 4 |
+
+The subscription, setup fee and testing package are also priced by these same size bands.
+
+### How service level and contract length work together
+
+| Service level | Contract length | Setup fee | Capacity test allowed? |
+|---|---|---|---|
+| Essential Weather | **Always 5 years** (the box is locked) | Not on the quote | No |
+| Energy Accounting | 5 years | **Waived** (shown as "setup fee waived") | Yes |
+| Energy Accounting | 1 year | **Charged in full** | Yes |
+
+**The setup fee is free only on a 5-year term.** On the quote it appears as "Site Configuration and Data Validation" with a yellow note: "discount — setup fee waived because a 5-year or longer term was selected". Switching back to 1 year puts the full fee back.
+
+**Discounts cannot be typed in any more.** The only discount a user will normally see is the setup-fee waiver. If a line ever has a discount larger than its own price, the panel shows "discount is more than the line total" and will not let you submit.
+
+### Custom line item
+
+Super admins get a **Custom Service** line on new-site quotes. Anyone can edit its name and description, but **only a super admin can set its price**. It is only added to the quote if the price is above $0.
+
+---
+
+## Renewals
+
+**A renewal extends the subscription on sites that already exist.** The **Renew Sites** screen lists every site whose plan has **already ended, or ends within the next 90 days**. You can filter it to **Expired** or **Expiring soon**.
+
+1. Pick the sites. Click **Build renewal quote**.
+2. Pick the **Renew Date** in the header. The choices are June 30 or December 31, starting at least one year out.
+3. Each site starts with its renewal products already filled in, based on what is installed:
+   - POA sensors if the site has POA Denos, and rear-POA sensors if it has rear-POA Denos.
+   - The site's current service (Essential Weather or Energy Accounting), sized to the site's capacity.
+4. The number of years charged is **the time from the plan's current end date to the Renew Date**. For example, a plan ending 31 Dec 2026 renewed to 31 Dec 2027 is charged 1 year.
+5. Expand a site to add or remove products. Click **Create renewal quote**.
+
+When the renewal is marked **Shipped**, every site on it gets a new plan. **The plan starts on the day it is marked shipped, and ends on the Renew Date.** A site that is not yet active is also moved to "Shipped".
+
+## Add-on quotes
+
+**An add-on sells more hardware or services to existing sites, without touching their subscription.** On **Add Products**, pick the sites, then expand each one to add products. Each site starts empty. Every site must have at least one product.
+
+**Marking an add-on quote as Shipped does not change the sites.** No plan is started or extended. If the customer also needs more time on their plan, use a renewal.
+
+## Build from answers
+
+On both **Add Products** and **Renew Sites**, each site has a **Build from answers** button. It asks the same questions as a new-site quote (service level, contract length, modules, mounting, and so on), then adds the matching products to that site. It **adds** to what is already there. It does not replace it.
+
+Only questions that would add a product are shown. For example, "Rooftop" and "Modbus TCP Only" never appear, because they add nothing.
 
 ---
 
 ## Who can do what
 
-- **Quoting is open to ordinary users — even those not yet attached to a company.** A quote always has an owner; the owner's company (if any) is recorded on the quote, and a missing company is fine.
-- **Non-super-admins** see only quotes they own, created, or that belong to their company — and the only status change they can make is withdrawing a quote.
-- **Super-admins** see everything, can create quotes on behalf of any owner, manage all status transitions, add custom line items, export the quote list to Excel, and are the only ones who can delete quotes.
-- **Signing** is performed by the customer side (admin/user roles) — a super-admin cannot run the signing step on a customer's behalf.
-- Editing is locked for non-super-admins while a quote is in review or awaiting signature.
+| | Customer (Admin or User) | Super admin |
+|---|---|---|
+| See quotes | Their own, ones they created, and their company's | All |
+| Create a quote | Yes, for themselves. **They do not need a company yet.** | Yes, for any customer (pick them under **Customer Name** or **Owner**) |
+| Edit a new-site quote | No. The Edit button is greyed out while Pending or Waiting for Signing. After that, only the Shipping tab opens. | While Pending or Requested for Signing |
+| Edit a renewal or add-on quote | **Yes, at any step after review** (see gotchas) | Yes, at any step |
+| Request for Signing | No | Yes |
+| Accept and Sign | Yes | **No.** A super admin cannot sign on the customer's behalf. |
+| Withdraw | Yes, while Pending or Waiting for Signing | Yes |
+| Fill in billing and shipping (Confirm Order) | Yes | Yes |
+| Confirm Shipment / Cancel Shipment | No | Yes |
+| Delete | No | Yes |
+| Export to Excel | No | Yes |
+
+Admins and Users are treated exactly the same on every quote screen.
+
+---
+
+## The quote list
+
+- **Summary cards:** total quote count, total amount, and average amount. They follow the filters you have set.
+- **Filters:** Status, Quote type, and the company chosen in the page header.
+- **By default the list hides Shipped and Withdrawn quotes.** Tick them in the Status filter to see them. Deleted quotes are never shown.
+- **Search** covers project name, project owner, requestor name, company name, and reference number.
+- **Expiration date** is 90 days after the quote was **last changed**. Any change, including a step change, pushes it out again. Nothing stops an "expired" quote from being signed.
+- **Export** (super admins) saves only **the rows on the current page** to Excel. It leaves out Quote type, Company and Project Owner.
+
+---
+
+## What shipping switches on
+
+| Kind of quote | What happens to the site when marked **Shipped** |
+|---|---|
+| New site | Site status becomes **Shipped**. Plan starts today. Plan ends today + the contract years. Service is Basic for Essential Weather, Advanced otherwise. The **Commercial operation year** becomes the site's commercial operation date (1 January of that year). A capacity-test subscription runs for 1 year if the test was bought. |
+| Renewal | Each site's plan starts today and ends on the Renew Date. Sites not already active become **Shipped**. |
+| Add-on | Nothing. |
+
+---
+
+## What produces nothing
+
+These look right on screen but do not save, send, or change anything:
+
+- **Marking an add-on quote Shipped.** No subscription starts or extends on any site.
+- **Remote Access VPN and Outdoor Enclosure on Multiple Sites.** The grid shows them, and the Order Summary prices them. **But they are not sent when the quotes are created, so the saved quotes do not include them.** Add them to each quote afterwards.
+- **Typing a shipping amount.** Shipping is always $100, whatever is sent.
+- **Removing a site from a renewal or add-on while editing.** The site's part of the quote is **not** removed and still counts in the total.
+- **Contract length inside Build from answers.** It only decides which products get added. The quote's own term comes from the site.
+- **Picking "Modbus TCP Only".** Adds no product.
+- **A product that is inactive in QuickBooks, or has no SKU there.** It is silently left off the quote and the price.
+- **The Company filter when renewing.** Only the company part of the header filter applies to the renewal list. Site manager and tag filters are ignored.
+- **The phone and ZIP "valid" checks on the Shipping tab.** They never reject anything.
+- **Closing the signing window too early.** The quote only becomes Signed if the customer's browser tells the server the signature is done. Close the tab first, and the quote stays "Waiting for Signing". Nothing fixes it automatically. See [[e-signature]].
+- **The Quote tab on a Withdrawn quote.** The page opens blank.
 
 ---
 
 ## The rules that matter
 
-- **Status moves forward only** — a signed quote can never go back to pending. (The single sanctioned exception: an order can be reverted from shipped back to ordered for a not-yet-existing site.)
-- **Ordering requires a signed quote** — the invoice is only raised once the signature exists.
-- **Shipping activates the subscription** for new sites — plan start/end dates are written onto the site, including all sites of a group quote at once.
-- **An agreed renewal date wins over the term length.** If the quote carries a `nextRenewalDate`, that date (end of day) becomes the plan's end date; the `today + initialSubscriptionYears` calculation is only the fallback for quotes without one. This keeps a renewal aligned to the date the customer actually signed up to rather than silently extending the term from the ship date — `denowatts-backend/src/quote/quote.service.ts:452-457`.
-- **An older HubSpot-based quote/order path still exists in the codebase but is not used** — see [[hubspot-crm-legacy]]. The order route's `$dealId` parameter is legacy naming; it carries a quote id.
-- **Bulk creation is all-or-nothing** — if any row fails validation, nothing is created.
-- **Deleted quotes are hidden, not erased**, and excluded from all lists by default.
-- **Group children never appear in the quote list** — they are reached through their group parent.
-- Every meaningful step **emails the quote owner** (created, approved for signing, withdrawn, ordered, renewed).
+- **The server refuses to move a quote backwards**, except Shipped → Ordered. It does not force steps to be taken in order.
+- **Only a Signed quote can be ordered.** Ordering creates the QuickBooks invoice.
+- **Customers can only withdraw.** Every other step change is a super admin's.
+- **Creating many quotes at once is all or nothing.** If one row fails, none are created, and the error lists every failing row.
+- **Renewal and add-on quotes are all or nothing too.** If one site fails (for example, a missing address), the whole quote is rejected.
+- **Sites need a full address before they can go on a renewal or add-on quote.** The screen shows "This site is missing details" and lists what is missing.
+- **When a new customer signs, the company is matched by name.** If a company with exactly the project owner's name exists, the quote joins it. Otherwise a new company is created. The same goes for sites: a site with exactly the same name is reused.
+- **Every important step emails the quote owner:** created, approved for signing, withdrawn, signed, ordered, and renewal or add-on created or updated.
+- **Every create, change, order and delete is recorded in the audit trail.** See [[audit-trail]].
+
+---
+
+## Flow {dev}
+
+1. List page loads `PaginateQuotes` — `denowatts-portal/src/features/quote-management/QuoteManagementPage.tsx:165-187` → `denowatts-backend/src/quote/quote.resolver.ts:68-74` → `quote.service.ts:559-697`.
+2. **Create Quote** → chooser (no API) — `denowatts-portal/src/features/quote-management/create/QuoteCreateChooserPage.tsx:38-111`.
+3. New site: one-page `QuoteForm variant='merged'` — `create-quote/CreateQuotePage.tsx:8`. Products via `QuoteProducts` (`create-quote/components/QuoteStepReview.tsx:137-159`) → `quote.service.ts:1248-1278` → `utils/quote-product-sku.util.ts:122-182` (SKU choice) + `:14-91` (quantities) → QuickBooks `shared/quickbooks/quickbook.service.ts:481-503`.
+4. Order Summary re-prices via `QuotePricingPreview` — `shared/components/QuoteCartPanel.tsx:134-161` → `quote.service.ts:2030-2093`.
+5. Submit → `CreateQuote` — `QuoteForm.tsx:299-301` → `quote.service.ts:223-289` (price, owner resolve, `quoteType: NEW`, move docs, audit, email).
+6. Multiple sites → `BulkCreateQuotes` — `bulk-create/BulkCreatePage.tsx:1411-1444` → `quote.service.ts:776-910`.
+7. Renew → `RenewableSites` + `RenewalData` + `AddOnProducts` → `RenewQuote` / `UpdateRenewQuote` — `create/renew/RenewFlowPage.tsx:140-150,361-385` → `quote.service.ts:2095-2145, 1280-1451, 1453-1470, 1712-1726`.
+8. Add products → `RenewalData` + `AddOnProducts` → `CreateAddOnQuote` / `UpdateAddOnQuote` — `create/add-products/AddProductsFlowPage.tsx:89-104,272-290` → `quote.service.ts:1472-1491, 1728-1741`. Both group flows share `createGroupQuoteBatch` (`:1493-1710`) and `updateGroupQuoteBatch` (`:1743-2006`).
+9. Super admin **Request for Signing** → `UpdateQuote {status: REQUESTED_FOR_SIGNING}` — `quote-view/QuoteViewPage.tsx:70-93` → `quote.service.ts:291-389`.
+10. Customer **Accept and Sign** → `ProcessQuoteForSigning` — `QuoteViewPage.tsx:152-176` → `quote.service.ts:1157-1218` → DocuSeal submission. Embedded form posts completion from the browser to `POST /api/docuseal/signing/completed` — `denowatts-portal/src/common/utils/docusealApi.ts:11-29` → `denowatts-backend/src/shared/docuseal/docuseal.controller.ts:17-33` → `docuseal.service.ts:476-682` (SIGNED, company/site auto-create, PDF to Denobox, email).
+11. **Confirm Order** on the Shipping tab → `QuoteOrder` — `order/components/OrderForm.tsx:191-229` → `quote.service.ts:912-1129` (QuickBooks invoice, ORDERED, children ORDERED, docs to Denobox Plans, email).
+12. **Confirm Shipment** / **Cancel Shipment** → `UpdateQuote {status}` — `QuoteViewPage.tsx:209-232` → `quote.service.ts:413-543` (site subscription writes).
 
 ---
 
 ## Entry points {dev}
-- Quote list — `/settings/quote-management` — `denowatts-portal/src/features/quote-management/QuoteManagementPage.tsx`
-- Create single quote — `/settings/quote-management/create` — `denowatts-portal/src/features/quote-management/create-quote/CreateQuotePage.tsx`
-- Edit / view quote — `/settings/quote-management/:id` — `denowatts-portal/src/features/quote-management/quote/QuotePage.tsx`
-- Quote document view — `/settings/quote-management/:id/quote-view` — `denowatts-portal/src/features/quote-management/quote-view/QuoteViewPage.tsx`
-- Bulk create — `/settings/quote-management/bulk-create` — `denowatts-portal/src/features/quote-management/bulk-create/BulkCreatePage.tsx`
-- Order (shipping info) — `/settings/quote-management/order/:dealId` — `denowatts-portal/src/features/quote-management/order/OrderPage.tsx`
-- Renew — `/settings/quote-management/renew` and `/settings/quote-management/renew/:id` — `denowatts-portal/src/features/quote-management/renew/RenewPage.tsx`
+
+| Route | Route file → component | Title |
+|---|---|---|
+| `/settings/quote-management` | `routes/_dashboard/settings/quote-management/index.tsx` → `QuoteManagementPage.tsx` | Quote Management |
+| `/settings/quote-management/create` | `create/index.tsx` → `create/QuoteCreateChooserPage.tsx` | Create Quote |
+| `/settings/quote-management/create/new-site` | `create/new-site.tsx` → `create-quote/CreateQuotePage.tsx` | Quote for a New Site |
+| `/settings/quote-management/create/multi-site` | `create/multi-site.tsx` → `bulk-create/BulkCreatePage.tsx` | Quote for Multiple Sites |
+| `/settings/quote-management/create/add-products` | `create/add-products.tsx` → `create/add-products/AddProductsFlowPage.tsx` (`?id=` edits) | Add Products |
+| `/settings/quote-management/create/renew` | `create/renew.tsx` → `create/renew/RenewFlowPage.tsx` | Renew Sites |
+| `/settings/quote-management/renew/:id` | `renew/$id.tsx` → `RenewFlowPage.tsx` (edit) | Edit Renewal |
+| `/settings/quote-management/:id` | `$id/index.tsx` → `quote/QuotePage.tsx` (Quote / Shipping tabs) | Quote |
+| `/settings/quote-management/:id/quote-view` | `$id/quote-view.tsx` → `quote-view/QuoteViewPage.tsx` | Quote |
+| `/settings/quote-management/bulk-create` | `bulk-create.tsx` → redirect to `/create/multi-site` | — |
+| `/settings/quote-management/renew` | `renew/index.tsx` → redirect to `/create/renew` | — |
+| `/settings/quote-management/order/:dealId` | `order/$dealId.tsx` → `order/OrderPage.tsx` — **dead**, see gotchas | Billing Address |
+
+- Route files live under `denowatts-portal/src/routes/_dashboard/settings/quote-management/`; components under `denowatts-portal/src/features/quote-management/`.
+- No role gate on any route. `/settings` only runs `requireCompany`, and quote management is exempt — `denowatts-portal/src/common/utils/authGuards.ts:32,101`. Sidebar item "Quotation" for USER/ADMIN/SUPER_ADMIN, and in the reduced no-company sidebar — `common/components/AppSidebar/AppSidebar.tsx:43-47,450-475`.
+- Header controls by route: `RenewSettings` (Owner + Renew Date) on renew routes, `AddProductsSettings` (Owner) on add-products, `QuoteSettings` (search) on the list — `common/components/Header.tsx:660-704`.
+- External entry: Service Management "Renew (n)" → `/create/renew?site=…` — `features/settings/service-management/ServiceManagementPage.tsx:664-687`.
 
 ---
 
 ## GraphQL API surface {dev}
 
-All operations are in `denowatts-backend/src/quote/quote.resolver.ts`.
+All in `denowatts-backend/src/quote/quote.resolver.ts`. Every operation needs a JWT (global `JwtAuthGuard`).
 
-### Queries
-
-#### `paginateQuotes(filter: QuotePaginateFilterInput!): QuotePaginateResponse`
-
-Returns a paginated list of quotes (never returns group child quotes — `groupId: { $exists: false }` filter is always applied). Populates `owner` (firstName, lastName, email, phone), `company` (name), and `site` (name). Also returns aggregate stats over the entire matching result set (not just the current page).
-
-**Input (`QuotePaginateFilterInput`):**
-
-| Field | Type | Purpose |
-|---|---|---|
-| `page` | `Int` (default 1) | Page number |
-| `limit` | `Int` (default 10) | Items per page |
-| `search` | `String` | Full-text search across siteName, projectOwner, owner name, company name, referenceId |
-| `sortByAcNameplate` | `Int` | Sort direction (1 asc / -1 desc) by siteAcNameplate |
-| `sortByExpireAt` | `Int` | Sort direction by updatedAt |
-| `sortByCreatedAt` | `Int` | Sort direction by createdAt |
-| `sortByEstimatedShipDate` | `Int` | Sort direction by estimatedShipDate |
-| `company` | `ID` | Filter by company ObjectId |
-| `status` | `[QuoteStatus]` | Filter by one or more statuses |
-| `groupId` | `ID` | Filter child quotes by group parent |
-
-**Return (`QuotePaginateResponse`):** Standard mongoose-paginate fields (docs, totalDocs, limit, totalPages, page, etc.) plus:
-- `sumOfTotalAmount: Float` — sum of `totalAmount` across all matching docs
-- `avgOfTotalAmount: Float` — average of `totalAmount` across all matching docs
-
----
-
-#### `getQuoteById(id: ID!): QuoteResponse`
-
-Fetches a single quote by ID. Populates owner (firstName, lastName, email, phone), company (name, billingInfo), site (name). If the quote is a group (`isGroup: true`), fetches all child quotes and merges their products into `quote.products` (each product's `description` is prefixed with the child site name), and also returns the raw child quotes in `groupQuotes`. Attaches S3 product images to every product in the response.
-
-**Return (`QuoteResponse`):** All `Quote` fields plus:
-- `owner: QuoteOwnerResponse` — `{ _id, firstName, lastName, email, phone }`
-- `company: QuoteCompanyResponse` — `{ _id, name }`
-- `site: QuoteSiteResponse` — `{ _id, name }`
-- `groupQuotes: [Quote]` — only populated if `isGroup: true`
-
----
-
-#### `quoteProducts(quoteProductsInput: QuoteProductsInput!): QuoteProductsResponse`
-
-Derives the list of applicable products (with pre-set quantities and discounts) for a given site configuration. Fetches live pricing from QuickBooks. Used by the "Create Quote" wizard's services step to populate the product table.
-
-**Input (`QuoteProductsInput`):**
-
-| Field | Type | Validation | Purpose |
-|---|---|---|---|
-| `siteAcNameplate` | `Float` | Required, number | Site capacity in MW AC |
-| `siteMountingType` | `[SiteMountingType]` | Required, non-empty array | Drives hardware selection |
-| `siteModuleType` | `[SiteModuleType]` | Required, non-empty array | Monofacial vs. Bifacial sensor type |
-| `currentServices` | `CurrentServices` | Required enum | Monitoring service tier |
-| `initialSubscriptionYears` | `Int` | Required, number | Subscription term length |
-| `epcAndCapacityTest` | `Boolean` | Optional | Adds testing package |
-| `cellPlan` | `SiteCellPlan` | Optional | Adds cellular modem + data plan |
-| `outdoorEnclosure` | `Boolean` | Optional | Adds outdoor enclosure |
-| `remoteAccessVpn` | `Boolean` | Optional | Adds VPN service |
-| `showHorizontal` | `Boolean` | Optional | Adds horizontal sensor |
-| `dataAcquisitionSource` | `DataAcquisitionSource` | Optional | Adds DenoHub or OPC setup |
-
-**Return:** `{ products: [QuoteProduct] }` — products with `quantity` and `discount` already computed.
-
----
-
-#### `renewalData(renewalDataInput: RenewalDataInput!): RenewalDataResponse`
-
-Fetches pre-populated renewal data for either a list of existing site IDs or a group quote ID. Used to prime the renewal form.
-
-**Input (`RenewalDataInput`):**
-
-| Field | Type | Purpose |
-|---|---|---|
-| `sites` | `[ID]` | ObjectIds of existing Site documents |
-| `quoteId` | `ID` | ObjectId of an existing group quote (mutually exclusive with `sites`) |
-
-**Return (`RenewalDataResponse`):**
-- `sites: [RenewalSiteData]` — per-site renewal data including pre-calculated products
-- `owner: ID` — quote owner (only when loaded via `quoteId`)
-- `nextRenewalDate: Date` — stored renewal date (only when loaded via `quoteId`)
-
----
-
-#### `renewalAddProducts: RenewalAddProductsResponse`
-
-Returns the catalogue of add-on products available when editing a renewal quote (gateway, hub, cellular modem, etc.). Fetches from QuickBooks using `DenoWattsRenewalAddProductSku` values. No input required.
-
-**Return:** `{ products: [QuoteProduct] }` — quantity is always 0 (user must adjust).
-
----
-
-### Mutations
-
-#### `createQuote(createQuotationInput: CreateQuotationInput!): Quote`
-
-Creates a single new quote. SUPER_ADMIN can set any `owner`; other users are implicitly the owner.
-
-**Input (`CreateQuotationInput`):** All `Quote` fields except `_id`, `createdAt`, `updatedAt`, `status`, `company`, `billingInfo`, `createdBy`, `deletedAt`, `dsEnvelopeId`, `dsSigningUrl`, `orderDocuments`, `referenceId`, `hardwareSubtotal`, `initialOneTimePeriodSubtotal`, `initialRecurringPeriodSubtotal`, `recurringAnnualService`, `totalAmount`. Key fields:
-
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `owner` | `ID` | Conditionally | Required in payload; defaults to current user if omitted |
-| `isExistingSite` | `Boolean` | Yes | Flags whether site already exists in system |
-| `site` | `ID` | Optional | Reference to existing Site document |
-| `siteName` | `String` | Yes | Site display name |
-| `siteAcNameplate` | `Float` | Yes | Capacity in MW AC |
-| `projectOwner` | `String` | Yes | Name of project owner (free text) |
-| `siteAddress/City/State/ZipCode` | `String` | Yes | Location |
-| `estimatedShipDate` | `String` | Yes | Target ship date |
-| `commercialOperationYear` | `String` | Yes | Year site goes commercial |
-| `siteMountingType` | `[SiteMountingType]` | Yes | Array of mounting types |
-| `siteModuleType` | `[SiteModuleType]` | Yes | Array of module types |
-| `siteNewRetrofit` | `SiteNewRetrofit` | Yes | New or Retrofit |
-| `currentServices` | `CurrentServices` | Yes | Service tier |
-| `initialSubscriptionYears` | `Int` | Yes | Term length |
-| `products` | `[QuoteProductInput]` | Yes | Products with quantities/discounts |
-| `shipping` | `Float` | Yes | Shipping cost (default 100 on frontend) |
-| `quoteDocuments` | `[String]` | Optional | S3 temp URLs, moved to permanent path on save |
-| `epcAndCapacityTest` | `Boolean` | Optional | Adds testing package |
-| `cellPlan` | `SiteCellPlan` | Optional | Cellular plan |
-| `outdoorEnclosure` | `Boolean` | Optional | Outdoor enclosure |
-| `remoteAccessVpn` | `Boolean` | Optional | VPN add-on |
-| `opcClientSetup` | `Boolean` | Optional | OPC setup flag |
-| `showHorizontal` | `Boolean` | Optional | Horizontal sensor flag |
-| `dataAcquisitionSource` | `DataAcquisitionSource` | Optional | Modbus TCP+RTU, TCP Only, or OPC Only |
-
-**Return:** Created `Quote` document.
-
----
-
-#### `bulkCreateQuotes(bulkCreateQuotationInput: BulkCreateQuotationInput!): BulkCreateQuotationResponse`
-
-Creates multiple quotes in a single operation. Products are auto-calculated per site configuration (no manual product list required).
-
-**Input (`BulkCreateQuotationInput`):**
-- `owner: ID` — required; owner for all quotes
-- `quotes: [BulkCreateQuotationInputQuote]` — array of `CreateQuotationInput` minus `products`
-
-**Return (`BulkCreateQuotationResponse`):**
-- `quotes: [Quote]` — all created quotes
-- `totalCreated: Int`
-
----
-
-#### `updateQuote(updateQuoteInput: UpdateQuoteInput!): Quote`
-
-Updates an existing quote. All fields are optional except `_id`.
-
-**Input (`UpdateQuoteInput`):** `_id: ID` (required) plus partial `Quote` fields (excludes `billingInfo`, `shippingInfo`, `deletedAt`).
-
-**Return:** Updated `Quote` document.
-
----
-
-#### `quoteOrder(quoteOrderInput: QuoteOrderInput!): Quote`
-
-Converts a signed quote into an order. Creates a QuickBooks invoice and marks the quote as `ORDERED`. Only callable on quotes with status `SIGNED`.
-
-**Input (`QuoteOrderInput`):**
-- `_id: ID` — required
-- `billingInfo: BillingInfoInput` — billing contact and address
-- `shippingInfo: ShippingInfoInput` — shipping contact and address
-- `estimatedShipDate: String` — confirmed ship date
-- `orderDocuments: [String]` — S3 temp URLs for order documents
-
-**Return:** Updated `Quote` document with status `ORDERED`.
-
----
-
-#### `deleteQuote(deleteQuoteInput: DeleteQuoteInput!): Quote`
-
-**Role guard: SUPER_ADMIN only** (`@Roles(UserType.SUPER_ADMIN)`).
-
-Soft-deletes a quote by setting `status = DELETED` and `deletedAt = now()`.
-
-**Input:** `{ _id: ID }`
-
----
-
-#### `processQuoteForSigning(quoteSigningInput: QuoteSigningInput!): QuoteResponse`
-
-**Role guard: ADMIN or USER** (`@Roles(UserType.ADMIN, UserType.USER)`).
-
-Initiates DocuSeal e-signature workflow for a quote in `REQUESTED_FOR_SIGNING` status. Creates (or reuses) a DocuSeal submission for the current user as signer, stores `dsEnvelopeId` and `dsSigningUrl` back on the quote.
-
-**Input:** `{ _id: ID }`
-
-**Return:** Updated `QuoteResponse` with DocuSeal URLs populated.
-
----
-
-#### `renewQuote(renewQuoteInput: RenewQuoteInput!): RenewQuoteResponse`
-
-Creates a renewal group quote plus one child quote per site. The group parent has `isGroup: true` and `products: []`; actual products are on the children. The group `siteAcNameplate` is the sum of all child nameplate values. Shipping is set to 0 for renewals.
-
-**Input (`RenewQuoteInput`):**
-- `owner: ID` — required, must exist
-- `renewalData: [RenewalDataItemInput]` — per-site renewal items (see below)
-- `nextRenewalDate: Date` — required, stored on group and all children
-
-**`RenewalDataItemInput` fields:**
-
-| Field | Type | Validation | Purpose |
-|---|---|---|---|
-| `_id` | `ID` | Required, MongoId | Site ObjectId |
-| `siteName` | `String` | Required | Site name |
-| `siteAcNameplate` | `Float` | Required | Capacity in MW AC |
-| `siteMountingType` | `[SiteMountingType]` | Required, non-empty | Mounting types |
-| `siteModuleType` | `[SiteModuleType]` | Required, non-empty | Module types |
-| `initialSubscriptionYears` | `Int` | Required | Renewal term length |
-| `currentServices` | `CurrentServices` | Required, enum | Service tier |
-| `products` | `[QuoteProduct]` | Required, non-empty | Products with quantities |
-
-**Return (`RenewQuoteResponse`):**
-- `quotes: [Quote]` — the created child quotes (not the group parent)
-- `totalCreated: Int`
-
----
-
-#### `updateRenewQuote(updateRenewQuoteInput: UpdateRenewQuoteInput!): UpdateRenewQuoteResponse`
-
-Updates an existing renewal group quote using upsert logic: for each site in `renewalData`, upserts the child quote matching `{ groupId, site }`. Group totals are recalculated from ALL current children after upsert.
-
-**Input (`UpdateRenewQuoteInput`):**
-- `_id: ID` — group quote ObjectId
-- `renewalData: [RenewalDataItemInput]` — same structure as `renewQuote`
-- `nextRenewalDate: Date` — required
-
-**Return (`UpdateRenewQuoteResponse`):**
-- `quotes: [Quote]` — the upserted child quotes for the input sites
-- `totalUpdated: Int` — sum of modifiedCount + upsertedCount
-
----
-
-## Services {dev}
-
-### QuoteService — `denowatts-backend/src/quote/quote.service.ts`
-
-Injected dependencies: `quoteModel`, `companyModel`, `DocuSealService`, `QuickBooksService`, `UsersService`, `SitesService`, `StorageService`, `EmailService`, `ChannelsService`.
-
----
-
-#### `getQuoteStatusLevel(status: QuoteStatus): number`
-
-Maps each status to a numeric level for forward-only transition enforcement:
-- `PENDING` → 1, `REQUESTED_FOR_SIGNING` → 2, `SIGNED` → 3, `ORDERED`/`SHIPPED` → 4, `WITHDRAWN`/`DELETED` → 5.
-
-Prevents updating a quote to a lower-level status (e.g., SIGNED → PENDING is blocked).
-
----
-
-#### `isQuoteActionable(quote: Quote, currentUser: User): true | throws`
-
-Authorization guard called before any destructive operation. Returns `true` if:
-1. `currentUser.type === SUPER_ADMIN`, OR
-2. `quote.owner` equals `currentUser._id`, OR
-3. `quote.company` equals `currentUser.company`.
-
-Throws `ForbiddenException("You are not authorized to access or do any action on this quote")` otherwise.
-
----
-
-#### `generateReferenceId(): number`
-
-Generates an 8-digit numeric reference ID by concatenating the last 4 digits of the current Unix timestamp (ms) with a 4-digit OTP. The OTP comes from `generateOTP(4)` in `denowatts-backend/src/common/utils/string`. The timestamp component provides ordering; the OTP component reduces collision probability.
-
----
-
-#### `calculateProducts(initialSubscriptionYears, inputProducts, shipping): Promise<calculations>`
-
-Core pricing engine. Steps:
-1. Filter products where `quantity > 0`.
-2. Throw `BadRequestException("No products are selected")` if none remain.
-3. Extract SKUs and fetch live pricing from QuickBooks via `quickBooksService.getProductsBySku(skus)`.
-4. Build final product list: merge QB data onto each product; if SKU is `CustomService` (100920), override `name`, `description`, and `price` from the input (admin-defined custom line items).
-5. Compute subtotals:
-   - `hardwareSubtotal` = sum of (price × qty − discount) for `Hardware` type products
-   - `initialRecurringPeriodSubtotal` = sum of (price × qty − discount) for `Service_Recurring`
-   - `recurringAnnualService` = `initialRecurringPeriodSubtotal / initialSubscriptionYears`
-   - `initialOneTimePeriodSubtotal` = sum of (price × qty − discount) for `Service_OneTime`
-   - `totalAmount` = hardwareSubtotal + recurringSubtotal + oneTimeSubtotal + shipping
-6. Round all monetary values to integers using `Math.round()`.
-
-Returns: `{ products, hardwareSubtotal, initialRecurringPeriodSubtotal, initialOneTimePeriodSubtotal, recurringAnnualService, totalAmount }`.
-
----
-
-#### `createQuote(input: CreateQuotationInput, currentUser: User): Promise<Quote>`
-
-1. Call `calculateProducts` with `input.initialSubscriptionYears`, `input.products`, `input.shipping`.
-2. Validate `input.owner` is set (throws `BadRequestException`); look up user via `usersService.getUserById` (throws `NotFoundException` if missing).
-3. Resolve `quoteOwner`: if SUPER_ADMIN, use `input.owner`; otherwise use `currentUser._id`.
-4. Generate `referenceId` via `generateReferenceId()`.
-5. Create quote document in MongoDB with merged calculation fields, `company: owner.company || null`, `createdBy: currentUser._id`.
-6. If `quoteDocuments` URLs provided, move each from temp S3 path to `<quoteId>/` via `storageService.moveFile`, update `quote.quoteDocuments`, and save.
-7. Send email notification to owner using `QUOTE_TEMPLATE_ID_NEW` SendGrid template. Subject: "Quote is created for {siteName}". Button URL: `${FRONTEND_URL}/settings/quote-management/${quote._id}/quote-view`.
-
-**Side effects:** 1 MongoDB insert, up to N S3 file moves, 1 SendGrid email (fire-and-forget — not awaited).
-
----
-
-#### `updateQuote(id, input, currentUser): Promise<Quote>`
-
-1. Fetch existing quote via `getQuoteById(id, currentUser)` (authorization check included).
-2. Status transition guards:
-   - Non-SUPER_ADMIN can only set `status = WITHDRAWN` (all other status changes rejected with `BadRequestException`).
-   - Forward-only: if `input.status` would lower the current status level, throws `BadRequestException`.
-3. If `input.products` is provided, recalculate pricing via `calculateProducts`.
-4. If `input.quoteDocuments` provided, move S3 files to permanent paths.
-5. If `input.owner` changed, re-resolve `company` from new owner.
-6. Execute `findByIdAndUpdate` with merged changes.
-7. **Status-transition side effects:**
-   - PENDING → REQUESTED_FOR_SIGNING: Send "approved for signing" email to owner.
-   - PENDING → WITHDRAWN (or any → WITHDRAWN): Send "quote withdrawn" email to owner.
-   - Not-existing-site AND any → SHIPPED: Call `sitesService.update` to set `serviceStatus = SHIPPED` and activate subscriptions (`plan.startDate = today`, `plan.endDate = quote.nextRenewalDate ? endOf(day, nextRenewalDate) : today + initialSubscriptionYears years`, `capacityTest` if `epcAndCapacityTest`) — `denowatts-backend/src/quote/quote.service.ts:452-457`.
-   - `isGroup` AND any → SHIPPED: Same subscription activation for ALL child quotes' sites, each using its **own** child quote's `nextRenewalDate` before falling back to its term length — `denowatts-backend/src/quote/quote.service.ts:511-521`.
-   - Not-existing-site AND SHIPPED → ORDERED (revert): Call `sitesService.update` to set `serviceStatus = ORDERED` and clear subscriptions. (Note: This handles an edge case where an order is placed before shipment is confirmed.)
-
----
-
-#### `moveDocuments(quoteId, documents): Promise<string[]>`
-
-For each document URL in the input array, calls `storageService.moveFile(quoteId, document)` to move the file from a temporary upload location to the permanent quote folder in S3. Returns the new permanent URLs.
-
----
-
-#### `paginateQuotes(filter, currentUser): Promise<QuotePaginateResponse>`
-
-1. Builds MongoDB `FilterQuery`:
-   - Always excludes group children: `groupId: { $exists: false }`.
-   - Status filter: DELETED is always excluded unless explicitly requested. If no status filter, adds `$ne: DELETED`.
-   - Non-SUPER_ADMIN: adds `$or` condition limiting results to quotes where `owner = currentUser._id` OR `createdBy = currentUser._id` OR `company = currentUser.company`.
-2. If `filter.search` is provided:
-   - Fetches matching user IDs via `usersService.find({ $text: { $search: searchText } })`.
-   - Fetches matching company IDs via `companyModel.find({ name: { $regex } })`.
-   - Applies `$or` across siteName, projectOwner, owner ids, company ids, and (if numeric) referenceId.
-3. Builds sort object from filter sort flags; defaults to `createdAt: -1` if none specified.
-4. Executes two parallel operations:
-   - `quoteModel.paginate(query, { page, limit, sort, populate: [...] })` — paginated results.
-   - `quoteModel.aggregate([{ $match: query }, { $group: { sumOfTotalAmount, avgOfTotalAmount } }])` — aggregate stats over all matches.
-5. Returns merged result with `sumOfTotalAmount` and `avgOfTotalAmount`.
-
----
-
-#### `getQuoteById(id, currentUser?): Promise<QuoteResponse>`
-
-1. `findById(id).populate([owner, company, site])`.
-2. Throws `NotFoundException` if not found.
-3. If `currentUser` provided, calls `isQuoteActionable`.
-4. If `quote.isGroup`: fetches child quotes via `quoteModel.find({ groupId: quote._id })`, merges all products into `quote.products` (prefixing description with site name), attaches raw children in `groupQuotes`.
-5. Batch-fetches product images from S3 (`findProductImagesBySkus`), attaches to each product.
-
----
-
-#### `bulkCreateQuotes(input, currentUser): Promise<BulkCreateQuotationResponse>`
-
-1. Look up owner; throw `NotFoundException` if missing.
-2. Fetch ALL QuickBooks products up-front (all `DenoWattsSku` values) in one QB call.
-3. For each quote in `input.quotes`:
-   a. Compute applicable SKU list via `getAllProductsSku`.
-   b. Filter QB products to that SKU list.
-   c. Call `quoteProducts` to get products with quantities (reuses the QB data, no extra QB call).
-   d. If `isExistingSite`, find site by name match `{ name: { $regex } }` — throws `BadRequestException` if not found.
-   e. Filter products to `quantity > 0`.
-   f. Call `calculateProducts`.
-   g. Generate `referenceId`.
-   h. Add `insertOne` operation to batch.
-   i. If any step throws, push error message and continue (collect all errors).
-4. If ANY errors occurred OR no operations were generated, throw `BadRequestException` with all error messages joined.
-5. Execute `quoteModel.bulkWrite(operations)`.
-6. Fetch created quotes by inserted IDs.
-7. Send bulk-creation email to owner listing all site names (fire-and-forget; errors logged to Sentry).
-
----
-
-#### `quoteOrder(id, input, currentUser): Promise<Quote>`
-
-1. Fetch quote with populated company, site, owner.
-2. Throw `BadRequestException` if quote not found or `status !== SIGNED`.
-3. Call `isQuoteActionable`.
-4. If `orderDocuments` provided, move S3 files.
-5. If `isGroup`: fetch child quotes, flatten products with site-name prefixes into `groupQuotesProducts`.
-6. Build QuickBooks invoice payload: company name, site name, billing/shipping info, line items (product name, description, SKU, unitPrice, qty, totalAmount, discount).
-7. Call `quickBooksService.createInvoice(payload)` — throws `InternalServerErrorException` if invoice creation fails.
-8. Update quote: set `status = ORDERED`, apply billingInfo, shippingInfo, estimatedShipDate, orderDocuments.
-9. If group: update all child quotes to `status = ORDERED` via `updateMany`.
-10. If `orderDocuments` exist: copy each document to `denobox/{site._id}/Plans/{originalFileName}` in S3 (fire-and-forget).
-11. Send order confirmation email via `QUOTE_ORDER_CONFIRMATION_TEMPLATE_ID` template to both the quote owner and the QB customer email (deduplicated). Template includes full billing/shipping info, totalAmount, referenceId, requestedShipDate, site Denobox link.
-12. Normalise populated fields back to ObjectId references before returning.
-
----
-
-#### `deleteQuote(id, currentUser): Promise<Quote>`
-
-1. Fetch and authorize via `getQuoteById`.
-2. Set `status = DELETED`, `deletedAt = new Date()` via `findByIdAndUpdate`.
-
----
-
-#### `processQuoteForSigning(input, currentUser): Promise<Quote>`
-
-1. Fetch and authorize via `getQuoteById`.
-2. Throw `BadRequestException` if `status !== REQUESTED_FOR_SIGNING`.
-3. Call `docuSealService.createSubmission({ submissionId: quote.dsEnvelopeId, quoteId, referenceId, submitter: { email, name, role: 'signer' } })` to create or resume a DocuSeal submission.
-4. Store returned `submissionId` → `dsEnvelopeId` and `signingUrl` → `dsSigningUrl` on the quote; save.
-5. Copy any `orderDocuments` to `denobox/{quote.site}/Plans/` (fire-and-forget).
-6. Return the quote — status stays `REQUESTED_FOR_SIGNING`. The move to `SIGNED` happens later, when the customer's browser reports the completed signature to `POST /api/docuseal/signing/completed`. See [[e-signature]].
-
----
-
-#### `getQuantity(productType, productSku, input): number`
-
-Derives the auto-calculated quantity for a product based on site parameters. Rules:
-- `CustomService` (100920) → 0 (admin must set manually)
-- `OutdoorEnclosure` (100700) → always 1
-- Any SKU containing `"100803"` (Expert Optimization Guide) → 1 (with a potential 100% discount if `initialSubscriptionYears === 5`, applied by `getDiscount`)
-- `Service_OneTime` type → 1
-- `Service_Recurring` type → `initialSubscriptionYears`
-- `DenoSensorPOA` (100210), `DenoSensorPOA_rPOA` (100211), `AntennaTrackerAdder` (100303) → `getDenoCount(siteAcNameplate)`
-- `DenoGatewayG3` (100100), `CellularModem` (100600), `DenoHubG3` (100102) → `getGatewayCount(siteAcNameplate)`
-- All other SKUs → 0
-
-**`getDenoCount` (Deno sensor quantity by AC nameplate in MW):**
-- < 1 MW → 1, < 10 MW → 2, < 25 MW → 4, < 100 MW → 6, ≥ 100 MW → 8
-
-**`getGatewayCount` (Gateway/modem quantity by AC nameplate in MW):**
-- < 1 MW → 1, < 10 MW → 1, < 25 MW → 2, < 100 MW → 3, ≥ 100 MW → 4
-
----
-
-#### `getAcSize(siteAcNameplate): number`
-
-Returns a "bucket" used to look up SKU in `DENOWATTS_INVENTORY_BY_AC`:
-- < 1 → 1, < 10 → 10, < 25 → 25, < 100 → 100, ≥ 100 → 1000
-
----
-
-#### `getDiscount(product, input): number`
-
-Returns a per-product discount amount. Currently only one rule: if SKU contains `"100803"` (Expert Optimization Guide) AND `initialSubscriptionYears === 5`, return `product.price` (i.e., 100% discount — effectively free when bundled with a 5-year subscription). Otherwise returns 0.
-
----
-
-#### `getAllProductsSku(input, currentUser): DenoWattsSku[]`
-
-Builds the full list of applicable SKUs for a site configuration. Always includes: `DenoGatewayG3`, `DenoSensorHorizontal`. SUPER_ADMIN also gets `CustomService`. Then adds conditionally:
-- `siteModuleType` includes Monofacial → `DenoSensorPOA` (100210)
-- `siteModuleType` includes Bifacial → `DenoSensorPOA_rPOA` (100211)
-- `siteMountingType` includes GroundTracker → `AntennaTrackerAdder` (100303)
-- `currentServices === BASIC_WEATHER` → `BasicWeather` (100800)
-- `currentServices === BASIC_MONITORING` → `BasicMonitoring_{acSize}`
-- `currentServices === ADVANCED_ENERGY_ACCOUNTING` → `AdvancedEnergyAccounting_{acSize}` AND `ExpertOptimizationGuide_{acSize}`
-- `currentServices === EXPERT_OPTIMIZATION_GUIDE` → `ExpertOptimizationGuide_{acSize}`
-- `currentServices === ESSENTIAL_WEATHER` → `EssentialWeather` (100801)
-- `epcAndCapacityTest` → `TestingPackage_{acSize}`
-- `cellPlan === Cell_1GB_Month` → `CellularModem` (100600) + `CellularData1GB` (100901-1)
-- `cellPlan === Cell_10GB_Month` → `CellularModem` (100600) + `CellularData10GB` (100901-10)
-- `outdoorEnclosure` → `OutdoorEnclosure` (100700)
-- `remoteAccessVpn` → `RemoteAccessVPN` (100904)
-- `dataAcquisitionSource === MODBUS_TCP_AND_RTU` → `DenoHubG3` (100102)
-- `dataAcquisitionSource === OPC_ONLY` → `OPC_Client_Setup` (100910)
-
----
-
-#### `quoteProducts(input, currentUser, quickBooksProducts?): Promise<QuoteProductsResponse>`
-
-1. If `quickBooksProducts` provided (from bulk create), skip QB call.
-2. Otherwise: compute SKU list via `getAllProductsSku`, fetch from QB.
-3. Batch-fetch product images from S3 (skipped when `quickBooksProducts` provided).
-4. Map each QB product to a `QuoteProduct` with `quantity` (via `getQuantity`), `discount` (via `getDiscount`), `image`, `type`, `price`, `order`.
-5. Return `{ products }`.
-
----
-
-#### `renewalData(input, currentUser?): Promise<RenewalDataResponse>`
-
-Two branches:
-
-**Branch A — quoteId provided (group quote renewal edit):**
-1. Find group quote; throw if not found or not `isGroup`.
-2. Authorize if `currentUser` provided.
-3. Fetch all child quotes for this group.
-4. Batch-fetch all product images in one S3 call.
-5. For each child quote, look up the site to get `subscriptions`, map to `RenewalSiteData`.
-
-**Branch B — sites array provided:**
-1. Fetch all Site documents by IDs.
-2. Fetch renewal SKU products from QB (all `DenoWattsRenewalSku` values).
-3. Strip `-R` suffix from renewal SKUs to find images (original product images).
-4. For each site:
-   - Query Deno channels to detect sensor types: looks for `DenoChannelOrientation.POA` with and without `AuxPyranometerOrientation.RPOA` aux sensor.
-   - Compute `acInMw` from site blocks' `acNameplate` sum.
-   - Adds `DenoSensorPOA-R` if POA sensor detected, `DenoSensorPOA_rPOA-R` if rPOA detected.
-   - Adds service tier product based on `site.subscriptions.plan.type`: BASIC → `EssentialWeather`; others → `AdvancedEnergyAccounting_{acSize}`.
-   - Sets `initialSubscriptionYears`: ESSENTIAL_WEATHER plan → 1 year, all others → 5 years.
-   - Sets `siteModuleType` to `[Monofacial]` (always — no bifacial detection for renewals currently).
-   - Maps `block.info.mountType` → `SiteMountingType` (Rooftop, GroundFixed, Carport, GroundTracker).
-
----
-
-#### `renewQuote(input, currentUser): Promise<RenewQuoteResponse>`
-
-1. Look up owner.
-2. Fetch all QB renewal SKUs (`DenoWattsRenewalSku` + `DenoWattsRenewalAddProductSku`) in one QB call.
-3. Get the first site from renewalData to use as "group site" for address population.
-4. Create **group quote** immediately via `quoteModel.create` with: `isGroup: true`, `products: []`, `site: null`, `siteName: "Multiple Sites"` (or single site name), `siteAcNameplate` = sum of all, `shipping: 0`, `siteNewRetrofit: Retrofit`, `estimatedShipDate: today + 30 days`, `expiresAt: today + 90 days`, `nextRenewalDate: input.nextRenewalDate`.
-5. For each renewal site:
-   a. Look up site document.
-   b. Resolve products by matching input products' SKUs against fetched QB products.
-   c. Set product `quantity` to `Number(item.quantity).toFixed(3)` (3 decimal precision for fractional quantities).
-   d. Run `calculateProducts` for this site.
-   e. Build child quote payload with `groupId = groupQuote._id`.
-   f. Validate against Mongoose schema.
-   g. Add `insertOne` to bulk operations.
-   h. On error: push error message (rollback: group quote will be deleted if any error).
-6. If any errors: delete group quote, throw `BadRequestException` with all error messages.
-7. Execute `bulkWrite(operations)`.
-8. Fetch created child quotes.
-9. Send renewal email to owner (fire-and-forget, Sentry on error).
-
----
-
-#### `updateRenewQuote(input, currentUser): Promise<UpdateRenewQuoteResponse>`
-
-1. Fetch existing group quote; throw if not found or not `isGroup`.
-2. Authorize.
-3. Fetch owner.
-4. Fetch all QB renewal SKUs.
-5. For each renewal site: build child quote payload and add an `updateOne` with `upsert: true` matching `{ groupId: input._id, site: renewalData._id }`.
-6. Execute `bulkWrite`.
-7. Recalculate group totals by re-fetching ALL current child quotes (existing + upserted), flattening products, calling `calculateProducts`.
-8. Update group quote with new totals, `siteAcNameplate` (sum of all children), `nextRenewalDate`.
-9. Fetch upserted/updated child quotes for the input sites.
-10. Send update email (fire-and-forget).
-
----
-
-#### `renewalAddProducts(): Promise<RenewalAddProductsResponse>`
-
-1. Fetch all `DenoWattsRenewalAddProductSku` products from QB.
-2. Batch-fetch images from S3.
-3. Return all with `quantity: 0`.
-
----
-
-#### `findProductImagesBySkus(skus): Promise<Map<string, string>>`
-
-Normalizes SKUs by stripping the suffix after `-` (e.g., `100210-R` → `100210`), then calls `storageService.findFilesByNames("quickbooks/products", normalizedSkus)` in a single batch call. Returns a `Map<sku, imageUrl>`.
-
----
-
-## Schemas {dev}
-
-### Quote — `denowatts-backend/src/quote/schemas/quote.schema.ts`
-
-The `Quote` class is both a Mongoose `@Schema` and a GraphQL `@ObjectType`. The schema uses `timestamps: true` (auto-creates `createdAt` and `updatedAt`).
-
-| Field | Type | Required | Default | Purpose |
+| Operation | Kind | Role | Line | Service |
 |---|---|---|---|---|
-| `_id` | `ObjectId` | auto | — | MongoDB primary key |
-| `groupId` | `ObjectId` (ref: Quote) | No | — | Links child renewal quotes to their group parent |
-| `isGroup` | `Boolean` | No | `false` | Marks a quote as a group parent |
-| `referenceId` | `Number` | Yes | — | Human-readable 8-digit ID |
-| `owner` | `ObjectId` (ref: User) | Yes | — | The customer/requestor who owns this quote |
-| `company` | `ObjectId` (ref: Company) | No | — | Company the owner belongs to at quote creation time |
-| `isExistingSite` | `Boolean` | Yes | — | Whether the site already exists in the system |
-| `site` | `ObjectId` (ref: Site) | No | — | Link to existing Site document |
-| `siteName` | `String` | Yes | — | Display name of the site |
-| `siteAcNameplate` | `Number` | Yes | — | Site AC capacity in MW |
-| `projectOwner` | `String` | Yes | — | Name of the project owner (free-text) |
-| `siteAddress` | `String` | Yes | — | Street address |
-| `siteCity` | `String` | Yes | — | City |
-| `siteState` | `String` | Yes | — | State |
-| `siteZipCode` | `String` | Yes | — | ZIP code |
-| `estimatedShipDate` | `String` | Yes | — | Target equipment ship date |
-| `commercialOperationYear` | `String` | Yes | — | Year of commercial operation |
-| `siteMountingType` | `[SiteMountingType]` | Yes | — | Array: Rooftop, Ground(Fixed), Ground(Tracker), Carport |
-| `siteModuleType` | `[SiteModuleType]` | Yes | — | Array: Monofacial, Bifacial |
-| `siteNewRetrofit` | `SiteNewRetrofit` | Yes | — | New or Retrofit |
-| `quoteDocuments` | `[String]` | No | — | S3 URLs for quote documents |
-| `orderDocuments` | `[String]` | No | — | S3 URLs for order/purchase documents |
-| `currentServices` | `CurrentServices` | Yes | — | Service tier enum |
-| `initialSubscriptionYears` | `Number` | Yes | — | Subscription term in years |
-| `epcAndCapacityTest` | `Boolean` | No | `false` | Whether EPC/capacity testing is included |
-| `cellPlan` | `SiteCellPlan` | No | — | Cell data plan: Cell_1GB_Month or Cell_10GB_Month |
-| `outdoorEnclosure` | `Boolean` | No | — | Whether outdoor enclosure is included |
-| `products` | `[QuoteProduct]` | Yes | — | Embedded array of product line items |
-| `hardwareSubtotal` | `Number` | No | — | Computed hardware total |
-| `initialRecurringPeriodSubtotal` | `Number` | No | — | Recurring service total for full initial term |
-| `initialOneTimePeriodSubtotal` | `Number` | No | — | One-time service total |
-| `recurringAnnualService` | `Number` | No | — | Annual recurring rate (recurringSubtotal / years) |
-| `shipping` | `Number` | Yes | — | Shipping cost (typically $100) |
-| `estimatedTax` | `Number` | No | — | Estimated tax (optional, not computed by service) |
-| `totalAmount` | `Number` | No | — | Grand total (all subtotals + shipping) |
-| `createdBy` | `ObjectId` (ref: User) | No | — | Admin who created the quote (may differ from owner) |
-| `status` | `QuoteStatus` | No | `PENDING` | Lifecycle status |
-| `createdAt` | `Date` | auto | — | Timestamp (mongoose timestamps) |
-| `updatedAt` | `Date` | auto | — | Last modification (expiry date = updatedAt + 90 days, computed on frontend) |
-| `dsEnvelopeId` | `String` | No | — | DocuSeal submission ID |
-| `dsSigningUrl` | `String` | No | — | DocuSeal signing URL for signer |
-| `dsSignImage` | `String` | No | — | DocuSeal signature image URL |
-| `signedAt` | `Date` | No | — | When the DocuSeal signing completed |
-| `billingInfo` | `BillingInfo` | No | — | Billing contact embedded sub-document |
-| `shippingInfo` | `ShippingInfo` | No | — | Shipping contact embedded sub-document |
-| `remoteAccessVpn` | `Boolean` | No | `false` | Whether Remote Access VPN is included |
-| `opcClientSetup` | `Boolean` | No | `false` | Whether OPC Client Setup is included |
-| `showHorizontal` | `Boolean` | No | `false` | Whether horizontal sensor variant is shown |
-| `dataAcquisitionSource` | `DataAcquisitionSource` | No | — | MODBUS_TCP_AND_RTU, MODBUS_TCP_ONLY, or OPC_ONLY |
-| `deletedAt` | `Date` | No | — | Soft-delete timestamp |
-| `nextRenewalDate` | `Date` | No | — | Scheduled next renewal date (set on renewal quotes) |
+| `createQuote(createQuotationInput)` | Mutation | any | 42 | `quote.service.ts:223` |
+| `bulkCreateQuotes(bulkCreateQuotationInput)` | Mutation | any | 50 | `:776` |
+| `updateQuote(updateQuoteInput)` | Mutation | any (status guarded in service) | 58 | `:291` |
+| `paginateQuotes(filter)` | Query | any (scoped in service) | 68 | `:559` |
+| `getQuoteById(id)` | Query | any (`isQuoteActionable`) | 76 | `:718` |
+| `quoteOrder(quoteOrderInput)` | Mutation | any (`isQuoteActionable`) | 84 | `:912` |
+| `deleteQuote(deleteQuoteInput)` | Mutation | **SUPER_ADMIN** | 94 | `:1131` |
+| `processQuoteForSigning(quoteSigningInput)` | Mutation | **ADMIN, USER** | 103 | `:1157` |
+| `quoteProducts(quoteProductsInput)` | Query | any | 112 | `:1248` |
+| `renewalData(renewalDataInput)` | Query | any | 120 | `:1280` |
+| `renewQuote(renewQuoteInput)` | Mutation | any | 128 | `:1453` |
+| `createAddOnQuote(createAddOnQuoteInput)` | Mutation | any | 136 | `:1472` |
+| `quotePricingPreview(input)` | Query | any | 144 | `:2030` |
+| `renewableSites(filter)` | Query | any (site access scope) | 152 | `:2095` |
+| `renewalAddProducts` | Query | any | 160 | `:2147` (alias of `addOnProducts`) |
+| `addOnProducts` | Query | any | 165 | `:2151` |
+| `updateRenewQuote(updateRenewQuoteInput)` | Mutation | any (`isQuoteActionable`) | 170 | `:1712` |
+| `updateAddOnQuote(updateAddOnQuoteInput)` | Mutation | any (`isQuoteActionable`) | 178 | `:1728` |
 
-### QuoteProduct (embedded sub-document / input type)
+Note `RolesGuard` lets SUPER_ADMIN bypass role lists, but the portal never shows **Accept and Sign** to a super admin (`QuoteViewPage.tsx:234-400`).
 
-| Field | Type | Required | Purpose |
-|---|---|---|---|
-| `id` | `String` | Yes | QuickBooks item ID |
-| `name` | `String` | Yes | Product name |
-| `description` | `String` | Yes | Product description |
-| `type` | `QuoteProductType` | No | Hardware, Service_Recurring, Service_OneTime |
-| `price` | `Float` | Yes | Unit price |
-| `quantity` | `Float` | Yes (default 0) | Quantity ordered |
-| `sku` | `String` | No | QuickBooks SKU |
-| `image` | `String` | No | S3 image URL (fetched at query time, not stored long-term) |
-| `order` | `Int` | No | Display sort order |
-| `term` | `String` | No | Subscription term description |
-| `billingFrequency` | `String` | No | Billing frequency description |
-| `discount` | `SafeFloat` | No | Per-line discount amount |
+**Key inputs** (`denowatts-backend/src/quote/dto/quote.dto.ts`):
 
-### BillingInfo / ShippingInfo (embedded sub-documents)
+- `QuotePaginateFilterInput` (153-200): `page`, `limit`, `search`, four `sortBy*` ints, `company`, `status[]`, `quoteType[]`, `groupId`.
+- `RenewalDataItemInput` (384-422): `_id` (site), `siteName`, `siteAcNameplate`, `siteMountingType[]`, `siteModuleType[]`, `initialSubscriptionYears`, `currentServices`, `products[]` (non-empty). Used by renew **and** add-on (`CreateAddOnQuoteInput.siteData`, 442-453).
+- `RenewQuoteInput` (424-440): `owner`, `renewalData[]`, `nextRenewalDate` (required). Add-on has no `nextRenewalDate`.
+- `RenewableSitesFilterInput` (519-545): `company`, `withinDays` (default 90), `includeExpired` (default true), `search`.
+- `QuotePricingPreviewInput` (613-629): `quoteType`, `shipping`, `sites[]` of `{siteId, siteName, initialSubscriptionYears, products?, config?}` (586-611). **`quoteType` and `shipping` are ignored** — `quote.service.ts:2034`.
 
-Both have identical fields, all optional strings: `contactFirstName`, `contactLastName`, `contactEmail`, `contactPhone`, `address`, `city`, `state`, `zipCode`.
+**Portal operation definitions:** `graphql/queries/quotationQueries.ts` (`QuoteProducts` 3, `PaginateQuotes` 40, `GetQuoteById` 156), `graphql/queries/renewalQueries.ts` (`RenewalData` 3), `features/quote-management/api/pricingQueries.ts` (`QuotePricingPreview` 8, `RenewableSites` 45, `AddOnProducts` 72), `api/quotationMutaions.ts` (`CreateQuote` 3, `BulkCreateQuotes` 87, `DeleteQuote` 181, `UpdateQuote` 189, `QuoteOrder` 273, `ProcessQuoteForSigning` 281), `api/renewalMutations.ts` (`RenewQuote` 3, `UpdateRenewQuote` 91, `CreateAddOnQuote` 179, `UpdateAddOnQuote` 195).
+
+**Defined but never called in the portal:** `CREATE_ORDER`, `PRE_ORDER_FORM_DATA`, `HUBSPOT_PRODUCTS`, `SEARCH_HUBSPOT_CONTACTS`, `SEARCH_HUBSPOT_COMPANIES` (HubSpot path is legacy — see [[hubspot-crm-legacy]]). `RENEWAL_ADD_PRODUCTS` is only a fallback in `features/settings/service-management/components/ProductList.tsx:102-105`, always skipped because both callers pass a catalog.
 
 ---
 
-## Enums {dev}
+## Service internals {dev}
 
-### `QuoteStatus`
-`PENDING` | `REQUESTED_FOR_SIGNING` | `SIGNED` | `ORDERED` | `SHIPPED` | `WITHDRAWN` | `DELETED`
+`QuoteService` — `denowatts-backend/src/quote/quote.service.ts`. Injects `quoteModel`, `companyModel`, `DocuSealService` (forwardRef), `QuickBooksService`, `UsersService`, `SitesService`, `StorageService`, `EmailService`, `ChannelsService`, `AuditTrailService` (125-139).
 
-### `SiteMountingType`
-`Rooftop` | `Ground (Fixed)` | `Ground (Tracker)` | `Carport`
+### Pricing — `calculateProducts` (141-221)
 
-### `SiteModuleType`
-`Monofacial` | `Bifacial`
+1. Keep lines with `quantity > 0`; throw `"No products are selected"` if none.
+2. Re-fetch those SKUs from QuickBooks (`getProductsBySku`, 60 s in-memory cache — `quickbook.service.ts:479-503`). **Lines whose SKU is not returned (inactive or missing) are dropped silently** (162-180).
+3. Server price wins over client price, except `CustomService` (100920), where client `name`/`description`/`price` are kept (168-172). Client `discount` is trusted as sent — **no server-side cap**.
+4. Bucket by QuickBooks parent category: "Service Recurring" → recurring; "Setup Fee" or "Service One Time" → one-time; anything else → hardware (`quickbook.service.ts:539-556`).
+5. Each line = `price × quantity − discount`. `recurringAnnualService = recurring / years`. `totalAmount = hardware + one-time + recurring + shipping`. All `Math.round` (207-211).
 
-### `SiteNewRetrofit`
-`New` | `Retrofit`
+### Shipping
 
-### `SiteCellPlan`
-`Cell_1GB_Month` | `Cell_10GB_Month`
+`FIXED_SHIPPING_CHARGE = 100` (`constants/index.ts:1`). Applied on `createQuote` (227, 249), `updateQuote` when products change (320, 338), `bulkCreateQuotes` (834, 844), group parents (1518, 1934), and the pricing preview group total (2034, 2090). Group **children** always get `shipping: 0` (1606, 1634, 1824, 1852). `quoteOrder` sends `quote.shipping ?? 100` to QuickBooks (984).
 
-### `CurrentServices`
-`BASIC_WEATHER` | `ESSENTIAL_WEATHER` | `BASIC_MONITORING` | `ADVANCED_ENERGY_ACCOUNTING` | `EXPERT_OPTIMIZATION_GUIDE`
+### Product selection — `utils/quote-product-sku.util.ts`
 
-### `QuoteProductType`
-`Hardware` | `Service_Recurring` | `Service_OneTime`
+- `getAllProductsSku` (122-182): always `DenoGatewayG3` + `DenoSensorHorizontal`; `CustomService` for SUPER_ADMIN only (127-129); then conditional SKUs per the business table above. `ADVANCED_ENERGY_ACCOUNTING` pushes both `advanced[acSize]` **and** `expert[acSize]` (146-148) — the `expert` SKUs (100803-*) are the QuickBooks "Site Configuration and Data Validation" setup fee (`denowatts-portal/src/features/quote-management/shared/setupFeeWaiver.ts:3-8`).
+- `getQuantity` (14-91): Custom 0; Outdoor enclosure 1; `100803*` 1; one-time 1; recurring = `initialSubscriptionYears`; POA/rPOA/tracker adder = Deno count; gateway/modem/DenoHub = gateway count; else 0.
+- `getAcSize` (93-105): buckets 1/10/25/100/1000.
+- `getDiscount` (107-112): `100803*` **and** `initialSubscriptionYears === 5` → full price (one unit). The portal's `applySetupFeeWaiver` uses `>= 5` and `price × quantity` (`shared/setupFeeWaiver.ts:34-45`), and is what actually reaches `calculateProducts`.
 
-### `DataAcquisitionSource`
-`MODBUS_TCP_AND_RTU` | `MODBUS_TCP_ONLY` | `OPC_ONLY`
+### Status guard — `updateQuote` (291-546)
+
+- Non-SUPER_ADMIN may only send `status: WITHDRAWN` (302-308).
+- Backward check: reject if `level(current) > level(new)` (310-312). Levels — `utils/quote-status.util.ts:7-26`: PENDING 1, REQUESTED_FOR_SIGNING 2, SIGNED 3, ORDERED 4, SHIPPED 4, WITHDRAWN 5, DELETED 5. So ORDERED ↔ SHIPPED is allowed both ways, forward skips are allowed, and WITHDRAWN/DELETED are terminal.
+- **No status check on product edits.** `updateQuote` re-prices whenever `products` is sent, at any status (316-322).
+- If `owner` changes, `company` is re-derived from the new owner (329-332).
+- Side effects on transition:
+  - → REQUESTED_FOR_SIGNING: "Quote approved for signing" email (366-389).
+  - → WITHDRAWN: "Quote withdrawn" email (391-411).
+  - NEW → SHIPPED: `sitesService.update(quote.site, {serviceStatus: SHIPPED, commercialOperationDate: Jan 1 of commercialOperationYear, energyAccounting: BASIC|ADVANCED, subscriptions.plan {type BASIC|ADVANCED, start today, end nextRenewalDate ?? today + years}, capacityTest 1 year if epcAndCapacityTest})` (413-461). Errors are caught and sent to Sentry only — **the status change still succeeds**.
+  - group RENEWAL → SHIPPED: for every child with a site, set plan (type from the **parent's** `currentServices`, end = child's `nextRenewalDate` ?? today + child years) and `serviceStatus: SHIPPED` unless already ACTIVE_* (462-520).
+  - NEW SHIPPED → ORDERED: `serviceStatus: ORDERED`, `subscriptions: undefined` (522-543).
+  - ADD_ON → SHIPPED: no branch.
+
+### Access — `utils/quote-status.util.ts:28-46`
+
+`isQuoteActionable`: SUPER_ADMIN, or `owner == user`, or `company == user.company`. Else `ForbiddenException`. List scope adds `createdBy == user` (`quote.service.ts:584-591`), so a creator can **list** a quote they cannot **open** if they are neither owner nor in its company.
+
+### List — `paginateQuotes` (559-697)
+
+- Always `groupId: {$exists: false}` (children never listed).
+- Status: explicit list minus DELETED; empty/absent → `$ne: DELETED`; only DELETED → `{$ne: DELETED, $exists: false}` (matches nothing) (567-576).
+- `quoteType` filter: NEW also matches `null` for legacy quotes (578-582).
+- Search: `$text` on users, regex on company name, regex on `siteName`/`projectOwner`, exact `referenceId` if numeric (593-622).
+- `sortByExpireAt` sorts by `updatedAt` (631-633). Default sort `createdAt: -1`.
+- Stats via parallel `$group` aggregate over the whole match (675-684).
+
+### Bulk create — `bulkCreateQuotes` (776-910)
+
+One QuickBooks call for all `DenoWattsSku`. Per row: derive SKUs → `quoteProducts` with the cached catalog → if `isExistingSite`, find site by **case-insensitive regex on name** (806-821) → price → `insertOne` with `quoteType: NEW`. Any error aborts all (858-860). One summary email.
+
+### Order — `quoteOrder` (912-1129)
+
+Rejects unless SIGNED (925-927). For groups, flattens child products with `(site) -` prefixes (938-957). Invoice email = `createdBy.email` → billing contact → owner (966). `createInvoice` failure throws (996-1000). Sets ORDERED, bulk-sets children ORDERED (1032-1037), copies `orderDocuments` to `denobox/{site}/Plans/` (1039-1052), emails owner + QuickBooks `BillEmail` (1054-1103), audits parent and each child. **Whole method is wrapped in a catch that rethrows as `InternalServerErrorException`** (1125-1128), so "not signed" reaches the client as a 500.
+
+### Signing — `processQuoteForSigning` (1157-1218)
+
+Requires REQUESTED_FOR_SIGNING. Creates or resumes the DocuSeal submission with the **current user** as signer. Stores `dsEnvelopeId`, `dsSigningUrl`. Status is unchanged. Completion — `docuseal.service.ts:476-682`: verifies `status === "completed"`, re-fetches the submission, requires REQUESTED_FOR_SIGNING, sets SIGNED, `dsSignImage`, `signedAt`; creates the company by **exact name = `projectOwner`** if the quote has none (545-565, 684-707), and sets it on the owner if they have none; creates the site by **exact name** if `!isExistingSite` (567-581, 709-746; new site gets `serviceStatus: ORDERED`, geocoded, "Capacity Test" tag if bought); copies `quoteDocuments` to Plans; stores the signed PDF at `denobox/{site}/Admin/quote-{ref}-signed.pdf` on a later tick (601-634). Full detail in [[e-signature]].
+
+### Renewal pre-fill — `renewalData` (1280-1451)
+
+- `quoteId` branch (edit): returns each child's stored products + the site's live `subscriptions`.
+- `sites` branch: fetch `DenoWattsRenewalSku` from QuickBooks; for each site, read Deno channels — POA without rPOA aux → `100210-R`, POA with rPOA aux → `100211-R` (1357-1395); service product: plan type `BASIC` → Essential Weather, else `advanced[acSize]` (1397-1413); `siteAcNameplate` = sum of block `acNameplate` / 1000; `initialSubscriptionYears` = 1 if plan type `ESSENTIAL_WEATHER` else 5; `currentServices` = ESSENTIAL_WEATHER if plan type `ESSENTIAL_WEATHER` else ADVANCED_ENERGY_ACCOUNTING (1420-1425); module type hard-coded `[Monofacial]` (1438).
+
+### Group create — `createGroupQuoteBatch` (1493-1710)
+
+Parent is created **first** (validated, then saved) using `siteData[0]` for address, mounting, module, service and years; `siteName` "Multiple Sites" if more than one; `siteAcNameplate` = sum; `isExistingSite: true`, `site: undefined`, `products: []`, `shipping: 100`, `status: PENDING`, `estimatedShipDate` today + 30, `nextRenewalDate` (renewal only) (1525-1571). A missing-detail validation error says `Add the missing details to "<site>"` (1563-1570). Children: each product must exist in the QuickBooks list or the site fails; quantity rounded to 3 decimals; `shipping: 0` (1573-1653). Any child error → parent deleted, all errors thrown (1660-1663). Audit per child, one email.
+
+### Group edit — `updateGroupQuoteBatch` (1743-2006)
+
+Checks `isGroup`, matching `quoteType`, `isQuoteActionable` — **no status check**. For each input site: `updateOne` with `upsert` on `{groupId, site}`, which resets that child to **PENDING**, regenerates its `referenceId`, and resets `estimatedShipDate`/`expiresAt` (1829-1901). **Children for sites no longer in the input are left untouched.** Then recompute parent totals from **all** children with `shipping: 100` and years from the first child (1925-1957). Parent `status` is not touched. Non-HTTP errors become `"Failed to update renewal quotes"` (2004), including for add-ons.
+
+### Pricing preview — `quotePricingPreview` (2008-2093)
+
+Per site: use sent `products`, or derive from `config` via the same SKU rules; price with shipping 0. Group total adds one $100.
+
+### Renewable sites — `renewableSites` (2095-2145)
+
+`sitesService.find` with `packageExpiresAt` = today + `withinDays`, which becomes `subscriptions.plan.endDate <= horizon` (`sites/services/sites.service.ts:1125-1129`), under the user's normal site access. Sites without a plan end date are skipped. Sorted by days until expiry.
+
+### Add-on catalog — `addOnProducts` (2151-2160)
+
+Every `DenoWattsSku` + `DenoWattsRenewalSku` + `DenoWattsRenewalAddProductSku`, minus `CustomService`, quantity 0.
 
 ---
 
-## SKU Reference {dev}
+## Frontend behaviour {dev}
 
-Defined in `denowatts-backend/src/quote/constants/index.ts`.
+**New-site form** — `create-quote/components/QuoteForm.tsx`, `variant='merged'` (sections Project / Location / Site Details / Services / Products, 37-63). The old `'wizard'` branch (444-470, `QuoteProgressIndicator.tsx`) is unreachable: both callers pass `'merged'` (`CreateQuotePage.tsx:8`, `quote/QuotePage.tsx:65`).
 
-### `DenoWattsSku` (new quotes)
-| SKU | Code | Category |
+- Defaults (390-403): owner = current user, New construction, Energy Accounting, 5 years, shipping 100, COD year = this year, Modbus TCP and RTU.
+- Service options: only "Essential Weather" and "Energy Accounting" (`types/quote.types.tsx:43-54`). Basic Weather, Basic Monitoring and Expert Optimization Guide exist in the enum but are not offered.
+- Essential Weather forces 5 years and disables the term select; Essential Weather/Basic Monitoring untick capacity test (`QuoteStepServices.tsx:89-121`). Capacity test disabled unless Energy Accounting (217-239).
+- Cellular Yes → 1 GB + VPN Yes; No → clears both (153-162); on submit, cellular off forces `cellPlan: null`, `remoteAccessVpn: false` (`QuoteForm.tsx:261-264`).
+- Only Hardware rows have a quantity stepper (`QuoteStepReview.tsx:389-444`). Custom Service: name/description editable by anyone, price by SUPER_ADMIN; price > 0 sets qty 1 (236-264, 346-366).
+- Setup-fee waiver applied on load and submit (`QuoteStepReview.tsx:210-224`, `QuoteForm.tsx:240-243`).
+- Validation on submit only (`validateTrigger={[]}`, 361).
+
+**Order Summary** — `shared/components/QuoteCartPanel.tsx`: `QuotePricingPreview`, no-cache, 400 ms debounce (78, 134-161). Blocks submit on over-line discount (109-137, `shared/discount.ts:27-83`).
+
+**Multiple sites** — `bulk-create/BulkCreatePage.tsx`: spreadsheet parse falls back to Essential Weather for unknown service text (71-92) and Modbus TCP and RTU for unknown acquisition (298-331). Payload (1411-1437) omits `remoteAccessVpn` and `outdoorEnclosure`, though the cart prices them (1355-1356). Stays on page after success (1446-1454).
+
+**Renew** — `create/renew/RenewFlowPage.tsx`: recurring quantity = days(renew date − plan end) / 365 (47-73, 194-215); setup fee not scaled. Renew Date slots: June 30 / Dec 31, ≥ 1 year out, 6 years (`features/settings/service-management/components/RenewSettings.tsx:48-93`). `RenewSettings` skips its users query for a SUPER_ADMIN with no company (27).
+
+**Add products** — `create/add-products/AddProductsFlowPage.tsx`: sites start empty (134-142); zero-qty lines dropped (254-255). Owner locked once sites are chosen or when editing (`components/AddProductsSettings.tsx:40,71-76`).
+
+**Build from answers** — `shared/components/SiteConfigureModal.tsx`: hides questions whose SKUs the catalog lacks (`shared/quoteConfigQuestions.ts:63-147`); uses the site's AC (200-202); merges by SKU, adding (`shared/mergeQuoteProducts.ts:10-28`).
+
+**Quote page tabs** — `quote/QuotePage.tsx:54-83`: "Quote" for SUPER_ADMIN at level < 3; "Shipping" (`OrderForm`) at level 3–4. Both keyed `'1'`; `?tab=order` sets `'2'`.
+
+**Shipping tab** — `order/components/OrderForm.tsx`: billing prefill from quote → company → owner/site (134-189); "Same as Billing Info"; ship date required, no past dates, default stored or today + 30; one "Purchase Order" upload; read-only at ORDERED/SHIPPED (258-260).
+
+**Quote view** — `quote-view/QuoteViewPage.tsx`: buttons per status (234-400); totals are stored server fields (557-700); Shipping shows "TBD" when `nextRenewalDate` is set and shipping is 0 (656-671); signature image if `dsSignImage` (938-949). Cover page falls back to "OneEnergy, Inc." for an empty project owner (`QuoteCoverPage.tsx:179`). `GET_QUOTE` does not request `quoteType`.
+
+---
+
+## Schema {dev}
+
+`Quote` — `denowatts-backend/src/quote/schemas/quote.schema.ts` (Mongoose + GraphQL, `timestamps: true`). Changes since v3:
+
+| Field | Type | Notes |
 |---|---|---|
-| DenoGatewayG3 | 100100 | Hardware |
-| DenoHubG3 | 100102 | Hardware |
-| AntennaTrackerAdder | 100303 | Hardware |
-| DenoSensorPOA | 100210 | Hardware |
-| DenoSensorPOA_rPOA | 100211 | Hardware |
-| DenoSensorPOA_Horizontal | 100212 | Hardware |
-| DenoSensorHorizontal | 100213 | Hardware |
-| CellularModem | 100600 | Hardware |
-| OutdoorEnclosure | 100700 | Hardware |
-| CellularData1GB | 100901-1 | Service_Recurring |
-| CellularData10GB | 100901-10 | Service_Recurring |
-| BasicMonitoring_{1,10,25,100,1000} | 100801-{n} | Service_Recurring |
-| AdvancedEnergyAccounting_{1,10,25,100,1000} | 100802-{n} | Service_Recurring |
-| ExpertOptimizationGuide_{1,10,25,100,1000} | 100803-{n} | Service_Recurring |
-| RemoteAccessVPN | 100904 | Service_Recurring |
-| BasicWeather | 100800 | Service_Recurring |
-| EssentialWeather | 100801 | Service_Recurring |
-| TestingPackage_{1,10,25,100,1000} | 100820-{n} | Service_OneTime |
-| OPC_Client_Setup | 100910 | Service_OneTime |
-| CustomService | 100920 | Service_OneTime |
+| `quoteType` | `QuoteType` (NEW / RENEWAL / ADD_ON), default NEW | 56-60, 417-418. Legacy quotes may be `null`. |
+| `expiresAt` | Date | 488-489. Written as created + 90 days (`quote.service.ts:240`, 1555); **never read by the portal**. |
+| `groupId`, `isGroup` | ObjectId / Boolean | Group parent/child link, used by RENEWAL and ADD_ON. |
+| `nextRenewalDate` | Date | RENEWAL parent and children only. |
+| `shipping` | Number, required | Always 100 on NEW and group parents; 0 on children. |
 
-### `DenoWattsRenewalSku` (renewal hardware/service)
-| SKU | Code |
-|---|---|
-| DenoSensorPOA | 100210-R |
-| DenoSensorPOA_rPOA | 100211-R |
-| EssentialWeather | 100801 |
-| AdvancedEnergyAccounting_{1,10,25,100,1000} | 100802-{n} |
+Other fields as before: owner, company, createdBy, referenceId (8 digits: last 4 of ms timestamp + 4-digit OTP, `utils/quote-status.util.ts:48-53`), site fields, `siteMountingType[]`, `siteModuleType[]`, `siteNewRetrofit`, `commercialOperationYear`, `currentServices`, `initialSubscriptionYears`, options (`epcAndCapacityTest`, `cellPlan`, `outdoorEnclosure`, `remoteAccessVpn`, `opcClientSetup`, `showHorizontal`, `dataAcquisitionSource`), `products[]` (`QuoteProduct`: id, name, description, type, price, quantity, sku, image, order, term, billingFrequency, discount), subtotals, `totalAmount`, `estimatedTax` (unused), `status`, DocuSeal fields (`dsEnvelopeId`, `dsSigningUrl`, `dsSignImage`, `signedAt`), `billingInfo`, `shippingInfo`, `quoteDocuments`, `orderDocuments`, `deletedAt`.
 
-### `DenoWattsRenewalAddProductSku` (renewal add-ons)
-| SKU | Code |
-|---|---|
-| DenoGatewayG3 | 100100 |
-| DenoHubG3 | 100102 |
-| DenoSensorHorizontal | 100213 |
-| DenoSensorPOA_Horizontal | 100212-R |
-| CellularModem | 100600 |
-| CellularData1GB | 100901-1 |
-| CellularData10GB | 100901-10 |
-| RemoteAccessVPN | 100904 |
+Indexes (494-502): `groupId` (sparse), `status + createdAt`, `owner`, `createdBy` (sparse), `company` (sparse), `quoteType + createdAt`.
 
----
+### SKU reference
 
-## Business rules (cited) {dev}
+`denowatts-backend/src/quote/constants/index.ts`. Renewal hardware carries an `-R` suffix; images are looked up without the suffix (`utils/quote-product-sku.util.ts:114-120`).
 
-- **Status is forward-only.** Updating a quote to a lower-level status is blocked for all users. Non-SUPER_ADMIN users can only change status to `WITHDRAWN`. — `denowatts-backend/src/quote/quote.service.ts:296–309`
-- **Expiry is computed, not stored.** The expiration date shown in the UI is `updatedAt + 90 days`. The field is not stored in MongoDB. — `denowatts-portal/src/features/quote-management/QuoteManagementPage.tsx:430`
-- **Quotes are never hard-deleted.** `deleteQuote` sets `status = DELETED` and `deletedAt`. DELETED quotes are filtered out of all paginate queries by default. — `quote.service.ts:1061–1072`
-- **deleteQuote is SUPER_ADMIN only.** — `quote.resolver.ts:75–79`
-- **processQuoteForSigning is ADMIN or USER only.** SUPER_ADMIN cannot sign their own quotes via this endpoint. — `quote.resolver.ts:81–88`
-- **paginateQuotes never returns group children.** The `groupId: { $exists: false }` filter is hardcoded. Children are accessible only via `getQuoteById` on the group parent. — `quote.service.ts:524–526`
-- **Expert Optimization Guide is free with 5-year subscription.** SKU `100803-*` gets a 100% discount when `initialSubscriptionYears === 5`. — `quote.service.ts:1204–1208`
-- **CustomService is SUPER_ADMIN only.** The `DenoWattsSku.CustomService` SKU is only added to the product list when `currentUser.type === SUPER_ADMIN`. — `quote.service.ts:1253–1255`
-- **Subscription activation happens on SHIPPED status.** When status transitions to SHIPPED for a new (not existing) site, the linked Site document gets `serviceStatus = SHIPPED`, a subscription plan with start/end dates is written, and optionally a capacity test subscription. — `quote.service.ts:403–484`
-- **Renewal quotes have $0 shipping.** All renewal quote creation hardcodes `shipping: 0`. — `quote.service.ts:1560, 1669`
-- **Group quote products are always empty.** The group parent stores aggregate financial totals but `products: []`. Product details live on child quotes only. — `quote.service.ts:1572`
-- **Renewal quoting requires AC in MW.** The `renewalData` branch B derives `acInMw` from site blocks in kW (`acNameplate`) divided by 1000. — `quote.service.ts:1454–1455`
-- **Bulk create is all-or-nothing.** If any quote in a bulk create fails validation, the entire operation is aborted (no partial inserts). — `quote.service.ts:800–803`
-- **Authorization: owner OR company member.** A non-SUPER_ADMIN user can act on a quote if they are the owner OR if the quote belongs to their company. — `quote.service.ts:122–140`
+| SKU | Code | Notes |
+|---|---|---|
+| DenoGatewayG3 | 100100 | Every new quote |
+| DenoHubG3 | 100102 | Modbus TCP and RTU |
+| AntennaTrackerAdder | 100303 | Ground (Tracker) |
+| DenoSensorPOA | 100210 (renewal 100210-R) | Monofacial |
+| DenoSensorPOA_rPOA | 100211 (renewal 100211-R) | Bifacial |
+| DenoSensorPOA_Horizontal | 100212 (renewal 100212-R) | Add-on catalog |
+| DenoSensorHorizontal | 100213 | Every new quote |
+| CellularModem | 100600 | Cellular |
+| OutdoorEnclosure | 100700 | Option |
+| CellularData1GB / 10GB | 100901-1 / 100901-10 | Recurring |
+| BasicWeather | 100800 | Not offered in UI |
+| EssentialWeather / BasicMonitoring_{n} | 100801 / 100801-{n} | **Share the 100801 prefix** |
+| AdvancedEnergyAccounting_{n} | 100802-{n} | Energy Accounting |
+| ExpertOptimizationGuide_{n} | 100803-{n} | QuickBooks name "Site Configuration and Data Validation" — the setup fee |
+| TestingPackage_{n} | 100820-{n} | Capacity test |
+| RemoteAccessVPN | 100904 | Recurring |
+| OPC_Client_Setup | 100910 | OPC Only |
+| CustomService | 100920 | SUPER_ADMIN only |
+
+`{n}` ∈ 1, 10, 25, 100, 1000 (the `acSize` band).
 
 ---
 
 ## Data touched {dev}
 
-- `quotes` collection — primary table for all quote documents. Created on `createQuote` / `bulkCreateQuotes` / `renewQuote`. Updated on `updateQuote` / `quoteOrder` / `deleteQuote` / `processQuoteForSigning` / `updateRenewQuote`. Read on all queries.
-- `users` collection — read to resolve owner details on quote creation/update; read to populate `owner` field in paginate and getById responses.
-- `companies` collection — read in `paginateQuotes` search (company name regex search); written indirectly when `owner.company` is denormalized onto the quote at creation time.
-- `sites` collection — read to validate existing sites in bulk create; **written** when a quote transitions to `SHIPPED` (updates `serviceStatus` and `subscriptions`). Also read in `renewalData` to build renewal product recommendations.
-- `channels` collection — read in `renewalData` (Branch B) to detect Deno sensor orientation for renewal product selection.
-- S3 (via `StorageService`) — files moved from temp paths on quote/order document upload; product images read from `quickbooks/products/` prefix; order documents copied to `denobox/{site._id}/Plans/`.
-- QuickBooks (via `QuickBooksService`) — product catalog read on every `quoteProducts`, `calculateProducts`, and `bulkCreateQuotes` call; invoice created on `quoteOrder`.
-- DocuSeal (via `DocuSealService`) — submission created/resumed on `processQuoteForSigning`.
-- SendGrid (via `EmailService`) — emails sent on: quote created, status → REQUESTED_FOR_SIGNING, status → WITHDRAWN, bulk quotes created, order placed, renewal created, renewal updated.
+- `quotes` — created by `createQuote`, `bulkCreateQuotes`, `createGroupQuoteBatch`; updated by `updateQuote`, `quoteOrder`, `deleteQuote` (soft), `processQuoteForSigning`, `updateGroupQuoteBatch` (upsert children, recompute parent), DocuSeal completion — `denowatts-backend/src/quote/quote.service.ts`, `denowatts-backend/src/shared/docuseal/docuseal.service.ts:476-682`.
+- `sites.serviceStatus`, `sites.subscriptions.plan`, `sites.subscriptions.capacityTest`, `sites.commercialOperationDate`, `sites.energyAccounting` — written on → SHIPPED / SHIPPED → ORDERED — `quote.service.ts:413-543`. New `sites` documents created on signing — `docuseal.service.ts:709-746`.
+- `companies` — read for list search; created on signing — `docuseal.service.ts:684-707`.
+- `users.company` — set on signing if the owner had none — `docuseal.service.ts:559-562`.
+- `channels` — read in renewal pre-fill to detect POA / rPOA — `quote.service.ts:1357-1374`.
+- Audit trail — `quote.created`, `quote.updated` (with field diff), `quote.ordered`, `quote.deleted`, `quote.renewed`, `quote.add_on_created` — `quote.service.ts:264, 358, 1111, 1143, 1671`. See [[audit-trail]].
+- S3 — quote/order documents moved to `<quoteId>/`; copied to `denobox/{site}/Plans/`; signed PDF to `denobox/{site}/Admin/`; product images from `quickbooks/products/`. See [[storage]].
+- QuickBooks — catalog read (60 s cache); invoice on order. SendGrid — emails listed above. See [[email]].
 
 ---
 
-## Create Quote wizard (frontend) {dev}
+## Business rules (cited) {dev}
 
-The create/edit quote form is a 5-step wizard in `denowatts-portal/src/features/quote-management/create-quote/components/QuoteForm.tsx`:
-
-1. **Step 1 — Project** (`QuoteStepProject`) — owner selection, isExistingSite toggle, site selector or new site name
-2. **Step 2 — Location** (`QuoteStepLocation`) — address fields, project owner, commercial operation year
-3. **Step 3 — Details** (`QuoteStepDetails`) — mounting type, module type, new/retrofit, ship date, data acquisition source
-4. **Step 4 — Services** (`QuoteStepServices`) — service tier, subscription years, options (cell plan, EPC test, outdoor enclosure, VPN, OPC). Triggers `quoteProducts` query to show live product list with prices and auto-calculated quantities.
-5. **Step 5 — Review** (`QuoteStepReview`) — product table with editable quantities/discounts. Final submit calls `createQuote` or `updateQuote`.
-
-Default values: `isExistingSite: false`, `siteNewRetrofit: New`, `currentServices: ADVANCED_ENERGY_ACCOUNTING`, `initialSubscriptionYears: 5`, `shipping: 100`, `dataAcquisitionSource: MODBUS_TCP_AND_RTU`.
-
----
-
-## Quote list page (frontend) {dev}
-
-Route: `/settings/quote-management` — `QuoteManagementPage.tsx`.
-
-- Default status filter: `[REQUESTED_FOR_SIGNING, PENDING, SIGNED, ORDERED, SHIPPED]` (excludes WITHDRAWN and DELETED).
-- Page size: 50 (configurable).
-- Sortable columns: siteAcNameplate, estimatedShipDate, createdAt, updatedAt (expiry proxy).
-- Status labels shown to non-SUPER_ADMIN users are user-facing aliases: PENDING → "Quote in Review", REQUESTED_FOR_SIGNING → "Waiting for Signing", SIGNED (without billingInfo) → "Awaiting Order".
-- Edit button disabled for non-SUPER_ADMIN when status is PENDING or REQUESTED_FOR_SIGNING.
-- Delete button visible to SUPER_ADMIN only.
-- Export to XLSX (SUPER_ADMIN only) exports currently visible quotes.
-- Summary cards show: total count, sum of total amount, average total amount — all from the backend aggregate query.
+- Non-super-admins can only set WITHDRAWN — `denowatts-backend/src/quote/quote.service.ts:302-308`.
+- Backward moves refused; ORDERED/SHIPPED share level 4 — `quote.service.ts:310-312`, `utils/quote-status.util.ts:7-26`.
+- Shipping fixed at $100 — `constants/index.ts:1`, `quote.service.ts:249`.
+- Order requires SIGNED — `quote.service.ts:925-927`.
+- Delete is SUPER_ADMIN only and soft — `quote.resolver.ts:94`, `quote.service.ts:1138-1141`.
+- Signing is ADMIN/USER — `quote.resolver.ts:103`.
+- Custom Service line is SUPER_ADMIN only — `utils/quote-product-sku.util.ts:127-129`.
+- Setup fee waived on 5-year term — `utils/quote-product-sku.util.ts:107-112`; portal `denowatts-portal/src/features/quote-management/shared/setupFeeWaiver.ts:34-45`.
+- Group children never listed — `quote.service.ts:563-565`.
+- Bulk and group creates are all-or-nothing — `quote.service.ts:858-860, 1660-1663`.
+- Add-on quotes do nothing on SHIPPED — `quote.service.ts:413-520` (no ADD_ON branch).
 
 ---
 
 ## Edge cases & gotchas {dev}
 
-- **`expiresAt` was removed from the schema.** The frontend calculates expiry as `updatedAt + 90 days`. There is no `expiresAt` field stored in MongoDB despite the `sortByExpireAt` sort option which actually sorts by `updatedAt`. — `quote.service.ts:588–590`
-- **Group quote financial totals vs. child products.** When displaying a group quote, `getQuoteById` merges all child products into the parent's `products` array purely for display. The stored `products: []` on the parent is empty. Financial totals on the parent ARE populated (sum of all children). — `quote.service.ts:693–711`
-- **Bulk create fails entirely on any error.** A single invalid site name or QB product miss aborts the whole batch. The UI should show per-row validation before submitting. — `quote.service.ts:800–803`
-- **Renewal `siteModuleType` is always Monofacial.** The renewal product recommendation engine does not detect bifacial panels from channels; it hardcodes `[Monofacial]`. Operators must manually adjust if bifacial sensors are present. — `quote.service.ts:1516`
-- **The `SIGNED` transition is browser-driven, not a webhook.** `processQuoteForSigning` leaves the quote in `REQUESTED_FOR_SIGNING`. It becomes `SIGNED` only when the portal posts the completed signature to `POST /api/docuseal/signing/completed` (`denowatts-backend/src/shared/docuseal/docuseal.controller.ts:17-33`), which is behind the global `JwtAuthGuard` and so **cannot be called by the signing provider**. That same call also writes `dsSignImage` / `signedAt` and auto-creates the Company and Site when they do not yet exist. If the signer closes the tab before it fires, the quote stays in `REQUESTED_FOR_SIGNING` with nothing to reconcile it. Full detail in [[e-signature]].
-- **S3 image lookup strips suffix after `-`.** Product images are stored without the AC-size suffix (e.g., image for `100802-25` is looked up as `100802`). The `normalizeSku` function does this stripping. — `quote.service.ts:1229–1231`
-- **Order-document copy is fire-and-forget.** Both `quoteOrder` and `processQuoteForSigning` copy order documents to the site's Denobox Plans folder asynchronously without awaiting, so errors are silent (no Sentry capture for document copy failures). — `quote.service.ts:970–983`, `1104–1109`
-- **Renewal group parent site is null.** Group quotes have `site: null`. Only the child quotes have `site` populated. Code must handle this when reading the group. — `quote.service.ts:1578`
-- **SHIPPED → ORDERED status revert.** The service has logic to revert a site's `serviceStatus` from SHIPPED back to ORDERED if the quote transitions from SHIPPED back to ORDERED. This is an unusual backward transition that is allowed only for non-existing-site quotes. — `quote.service.ts:486–508`
-- **QB product images are not stored on the Quote.** The `image` field in stored `QuoteProduct` sub-documents is not populated. Images are fetched from S3 on every `getQuoteById` and `paginateQuotes` call. This means product images cannot be served if S3 is unavailable.
-- **`QuoteStatus.DELETED` is excluded by default but can be included.** If `filter.status` contains only `DELETED`, the logic produces `$ne: DELETED, $exists: false` which will never match anything — this appears to be a bug. — `quote.service.ts:529–536`
+- **Signed renewal/add-on quotes can be re-priced by customers.** The list's Edit is only disabled at PENDING/REQUESTED_FOR_SIGNING for non-super-admins (`denowatts-portal/src/features/quote-management/QuoteManagementPage.tsx:543-549`), group edits route to `/renew/:id` or `/create/add-products?id=` (273-288), and `updateGroupQuoteBatch` has no status check (`quote.service.ts:1754-1770`). Editing a SIGNED/ORDERED/SHIPPED group re-prices the parent and resets edited children to PENDING while the parent keeps its status. **Flag for human review.**
+- **Renewal plan type comes from the parent.** On group SHIPPED, every child's plan `type` uses the parent's `currentServices`, which is copied from the first site (`quote.service.ts:494-498, 1552`). A mixed Essential Weather / Energy Accounting renewal gives every site the first site's plan type.
+- **Renewal pre-fill checks two different plan types.** The product check uses `BASIC` (1397), the tier/years check uses `ESSENTIAL_WEATHER` (1420-1425). New-site shipping only ever writes `BASIC` or `ADVANCED` (436-438). So a site that came from an Essential Weather quote pre-fills with the Essential Weather product **but** `currentServices: ADVANCED_ENERGY_ACCOUNTING` and 5 years — and on renewal shipment its plan becomes `ADVANCED`. **Flag for human review.**
+- **Renewal module type is always Monofacial** (1438). Sensor products are right (detected from channels); only the stored module field is wrong.
+- **Group edits never remove sites** — upsert only (1829-1901); stale children keep counting in parent totals (1925-1957).
+- **Bulk VPN/enclosure dropped** — payload `denowatts-portal/src/features/quote-management/bulk-create/BulkCreatePage.tsx:1411-1437`.
+- **Quote-view Edit ignores type.** Super admin "Edit" on the view page always goes to `/:id` (the new-site form), even for groups — `QuoteViewPage.tsx:130-132`.
+- **Blank `/:id` page** for WITHDRAWN, for non-super-admins at level < 3, and with `?tab=order` — `quote/QuotePage.tsx:35-83`.
+- **`/order/:dealId` is dead** — `OrderPage` renders `OrderForm initialData={null}` and ignores the param; a submit would send `_id: undefined` — `order/OrderPage.tsx:3-5`.
+- **`quoteOrder` errors are all 500s** — outer catch (`quote.service.ts:1125-1128`).
+- **Site status update failures on SHIPPED are swallowed** — Sentry only (455-461, 540-542); the quote still shows Shipped.
+- **Expiry display vs stored.** UI shows `updatedAt + 90d` (`QuoteManagementPage.tsx:515`, `QuoteViewPage.tsx:409-413`); `expiresAt` is stored but unread; nothing enforces expiry.
+- **Status filter "Deleted only" matches nothing** — `quote.service.ts:571-573`.
+- **Creator can list but not open.** List scope includes `createdBy` (588) but `isQuoteActionable` does not.
+- **Name-matching on signing.** Company by exact `projectOwner` (`docuseal.service.ts:685-691`); site by exact `siteName` (713-721). Two customers with the same project-owner text share a company.
+- **Edit toast says "Failed to create quote"** on an update failure — `create-quote/components/QuoteForm.tsx:315`.
+- **Orphans:** `components/RejectionModal.tsx` (no `REJECTED` status exists), `quote-view/components/GroupQuotesTable.tsx`, the wizard pieces of `QuoteForm`.
+- **Stuck signatures** — one-off repair script `denowatts-backend/src/quote/migrations/fix-stuck-docuseal-signing.migration.ts` (dry run by default, `APPLY=1` to write; defaults to one specific quote id). There is still no automatic reconciliation.
 
 ---
 
 ## Solar & platform terminology {dev}
 
-- **Quote** — a priced proposal for hardware + monitoring services for one site; the document this module manages, moving through `QuoteStatus` stages.
-- **Group quote** — a parent quote (`isGroup: true`) bundling multiple sites' renewal quotes into one signable document; products live on the child quotes (`groupId` → parent).
-- **Reference ID** — the human-readable 8-digit number identifying a quote (timestamp tail + 4-digit OTP).
-- **SKU** — the QuickBooks stock-keeping unit identifying each product (e.g. `100210` DenoSensorPOA); renewal variants carry an `-R` suffix.
-- **AC nameplate** — the site's rated AC capacity in MW; drives sensor/gateway quantities and which capacity-banded service SKU applies (`acSize` buckets 1/10/25/100/1000).
-- **Deno sensor (POA / rPOA)** — the Denowatts irradiance reference sensor; plane-of-array, with an optional rear-facing (rPOA) variant for bifacial modules.
-- **Gateway / DenoHub** — the on-site data-acquisition hardware; quantity scales with site size, and DenoHub is added for Modbus TCP+RTU acquisition.
-- **Service tier (`CurrentServices`)** — the monitoring subscription level: Basic/Essential Weather, Basic Monitoring, Advanced Energy Accounting, Expert Optimization Guide.
-- **DocuSeal** — the e-signature provider; a quote's submission ID and signing URL are stored as `dsEnvelopeId` / `dsSigningUrl`.
-- **QuickBooks** — the accounting system that is the source of truth for product names/prices and where the order invoice is created.
-- **Subscription activation** — on transition to SHIPPED for a new site, the linked Site gets `serviceStatus = SHIPPED` and a plan with start/end dates spanning the subscribed years.
-- **Soft delete** — `status = DELETED` + `deletedAt` timestamp; the document remains in MongoDB but is excluded from listings.
+- **Quote** — a priced proposal for hardware and monitoring for one or more sites.
+- **Quote type** — NEW (new site), RENEWAL (extends subscription), ADD_ON (more products, no subscription change).
+- **Group quote** — a parent quote (`isGroup`) signed once, with one child quote per site (`groupId`). All renewal and add-on quotes are groups.
+- **Reference ID** — the 8-digit number customers see.
+- **AC nameplate** — the site's rated AC capacity in MW; decides sensor/gateway counts and the size band of priced services.
+- **POA / rPOA** — plane-of-array irradiance, front and rear. Bifacial modules need the rear (rPOA) sensor.
+- **Gateway / DenoHub** — on-site data-collection hardware. DenoHub is added for Modbus TCP and RTU.
+- **Essential Weather / Energy Accounting** — the two service levels offered. Essential Weather is sensor data only; Energy Accounting analyses all site equipment.
+- **Setup fee** — "Site Configuration and Data Validation" (SKU 100803-*), waived on a 5-year term.
+- **Commercial operation year** — the year the site starts producing; becomes the site's commercial operation date on shipment.
+- **DocuSeal** — the e-signature provider. **QuickBooks** — source of product prices and where invoices are created.
 
-For the full domain vocabulary, see [[solar-glossary]].
+For the full vocabulary, see [[solar-glossary]].
 
 ---
 
-**Related flows:** [[e-signature]] · [[settings]] · [[site]] · [[channels]] · [[storage]] · [[companies]] · [[authentication]] · [[solar-glossary]] · [[email]] · [[hubspot-crm-legacy]]
+**Related flows:** [[e-signature]] · [[settings]] · [[site]] · [[channels]] · [[storage]] · [[companies]] · [[authentication]] · [[audit-trail]] · [[email]] · [[hubspot-crm-legacy]] · [[solar-glossary]]

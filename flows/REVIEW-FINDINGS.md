@@ -52,6 +52,17 @@ observations, not yet independently re-verified.
 - [ ] ✅ **`PromptsService.create` un-awaited save in try/catch** (`prompts.service.ts:17-29`) — the rejection still reaches the caller, but the method's logger/Sentry capture is bypassed. **Confirmed, minor** (observability only). Fix: `return await`.
 - [ ] ⚠️ **`User.lastName` nullability mismatch** — non-nullable GraphQL field over a non-required Mongo prop (`user.schema.ts:51-54`). All create paths require it, **but** `UpdateUserInput`'s `PartialType` accepts an explicit `lastName: null` (passes `@IsOptional()`, not in the forbidden-field list) and writes it — after which every query selecting that user's `lastName` throws a serialization error. Legacy docs also unconstrained. Fix: make the field nullable in GraphQL (or required in Mongo after backfill) and reject explicit null.
 
+### Added 2026-09-30 — quote refresh (read from `main` source; not yet adversarially re-verified)
+
+- [ ] **Customers can re-price a signed renewal / add-on quote** — list Edit is only disabled at PENDING/REQUESTED_FOR_SIGNING for non-super-admins (`QuoteManagementPage.tsx:543-549`), group edits route to the renew/add-products flows (`:273-288`), and `updateGroupQuoteBatch` checks access but not status (`quote.service.ts:1754-1770`). Editing a SIGNED/ORDERED/SHIPPED group rewrites products and parent totals after signature, resets edited children to PENDING, parent status unchanged. **Likely bug, Medium-High** (money after signature). · doc: [quote](quote.md)
+- [ ] **Renewal plan type set from the first site for every site** — group SHIPPED uses the parent's `currentServices` (copied from `siteData[0]`) for all children (`quote.service.ts:494-498, 1552`). · doc: [quote](quote.md)
+- [ ] **Renewal pre-fill compares two different plan types** — product uses `BASIC` (`quote.service.ts:1397`), tier/term use `ESSENTIAL_WEATHER` (`:1420-1425`); new-site shipping only writes `BASIC`/`ADVANCED` (`:436-438`). An Essential Weather site pre-fills as Energy Accounting / 5 years and becomes `ADVANCED` on renewal shipment. · doc: [quote](quote.md)
+- [ ] **Multi-site VPN / outdoor enclosure never saved** — priced in the cart but omitted from the `BulkCreateQuotes` payload (`BulkCreatePage.tsx:1355-1356` vs `:1411-1437`). **Confirmed silent drop.** · doc: [quote](quote.md)
+- [ ] **Group edits cannot remove a site** — upsert-only (`quote.service.ts:1829-1901`); stale children still count in parent totals (`:1925-1957`). · doc: [quote](quote.md)
+- [ ] **Status guard allows forward skips** (e.g. PENDING → SHIPPED bypassing signature) — `quote.service.ts:310-312` only rejects backward moves. UI never offers it; server allows it for SUPER_ADMIN. · doc: [quote](quote.md)
+- [ ] **`quoteOrder` turns every error into a 500** (incl. "not signed") — outer catch at `quote.service.ts:1125-1128`. Minor. · doc: [quote](quote.md)
+- [ ] **Dead `/order/:dealId` route; blank `/:id` page** for WITHDRAWN, non-super-admin pre-signing, and `?tab=order` — `order/OrderPage.tsx:3-5`, `quote/QuotePage.tsx:35-83`. Minor. · doc: [quote](quote.md)
+
 ## P3 — Placeholders & incomplete features (from the documentation pass; not re-verified)
 
 - [ ] **Alarm in-app notifications hardcode `senderName: "Trinity Trinity"`** — `webhook.service.ts:499` · doc: [webhooks](webhooks.md)
@@ -94,6 +105,6 @@ observations, not yet independently re-verified.
 - [ ] **Where does alarm threshold evaluation run?** Events arrive pre-flagged — doc: [alarm-config](alarm-config.md)
 - [ ] **Do the chart services proxy the report fleet-summary endpoint or compute independently?** — doc: [analytics](analytics.md)
 - [ ] **Where do archived capacity-test snapshots persist?** — doc: [tests](tests.md)
-- [ ] **DocuSeal SIGNED transition** presumably via external webhook — doc: [quote](quote.md)
+- [x] **DocuSeal SIGNED transition** — RESOLVED: not a webhook. The portal's browser posts completion to `POST /api/docuseal/signing/completed` (JWT-guarded, `docuseal.controller.ts:17-33`); a closed tab leaves the quote stuck, with only a one-off repair script (`quote/migrations/fix-stuck-docuseal-signing.migration.ts`). — docs: [quote](quote.md), [e-signature](e-signature.md)
 - [ ] **Canonical channel-id taxonomy** (prefix conventions hard-coded in the frontend) — doc: [site-builder](site-builder.md)
 - [ ] **`CAPACITY_TEST_PYTHON_SECRET` vs `PYTHON_SERVER_SECRET`** — two secrets, misleading name on the first — doc: [tests](tests.md)
